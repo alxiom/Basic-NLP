@@ -7,6 +7,9 @@
 ## 준비
 ```bash
 pip install -r requirements.txt
+curl -s https://raw.githubusercontent.com/konlpy/konlpy/master/scripts/mecab.sh | bash -x
+mkdir data
+wget https://raw.githubusercontent.com/e9t/nsmc/master/ratings.txt -O data/ratings.txt
 ```
 
 ## 목차
