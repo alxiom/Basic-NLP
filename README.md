@@ -6,7 +6,7 @@
 
 ## 준비
 ```bash
-pip install -r requirements
+pip install -r requirements.txt
 ```
 
 ## 목차
