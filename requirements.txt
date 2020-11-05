@@ -5,4 +5,5 @@ gensim
 pandas
 konlpy
 tqdm
-sentencepiece
+wikiextractor
+tokenizers

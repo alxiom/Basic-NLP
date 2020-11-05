@@ -1,5 +1,7 @@
 .DS_Store
 .idea
 __pycache__
-data
+data/kowiki*
+data/chat.csv
+data/ratings.txt
 *.html
