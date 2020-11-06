@@ -22,7 +22,7 @@ special = ["<pad>", "<unk>", "<bos>", "<eos>", "<sep>", "<cls>", "<mask>"]
 sample_chat = False
 train_tokenizer = False
 show_analysis = False
-train_seq2seq = True
+train_seq2seq = False
 
 if sample_chat:
     samples = 128
