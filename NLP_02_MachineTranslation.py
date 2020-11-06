@@ -1,49 +1,267 @@
-# Created by Alex Kim
-import glob
-import json
+import math
+import random
+
+import numpy as np
 import pandas as pd
-from tqdm import tqdm
+import torch
+from torch import nn
+from torch.nn import functional as ftn
+from torch.utils.data import Dataset, DataLoader
 from tokenizers import CharBPETokenizer
+from bokeh.layouts import column
+from bokeh.plotting import figure, show
 
-# wiki text --> vocab
-file_list = []
-for file_name in glob.iglob("data/kowiki/*/*", recursive=True):
-    file_list.append(file_name)
+# Created by Alex Kim
+random.seed(42)
+np.random.seed(42)
+torch.manual_seed(42)
 
-with open("data/kowiki.txt", "w", encoding="utf-8") as f_write:
-    for file_name in tqdm(file_list):
-        with open(file_name, "r", encoding="utf-8") as f_read:
-            for read_line in f_read:
-                read_line = read_line.strip()
-                if read_line:
-                    text = json.loads(read_line)["text"]
-                    refine_text = [t for t in text.split("\n") if len(t) > 0]
-                    f_write.write(" ".join(refine_text) + "\n")
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+special_tokens = ["<pad>", "<unk>", "<bos>", "<eos>", "<sep>", "<cls>", "<mask>"]
 
-data_path = "data/kowiki.txt"
-vocab_size = 8000
+sample_chat = False
+train_tokenizer = False
+show_analysis = False
+train_seq2seq = False
 
-tokenizer = CharBPETokenizer()
-tokenizer.train(
-    files=[data_path],
-    vocab_size=vocab_size,
-    special_tokens=["[PAD]", "[UNK]", "[BOS]", "[EOS]", "[SEP]", "[CLS]", "[MASK]"],
-    min_frequency=2,
-)
+if sample_chat:
+    train_data = pd.read_csv("data/chat.csv", header=0).sample(128)[["Q", "A"]].reset_index(drop=True)
+    train_data.to_csv("data/chat_sample.csv")
+    with open("data/chat_sample.txt", "w", encoding="utf-8") as f:
+        for i in range(len(train_data)):
+            row = train_data.loc[i]
+            query = row["Q"]
+            answer = row["A"]
+            f.write(f"{query} {answer}\n")
 
-tokenizer.save_model(f"data")
-print("saved")
+# chat text --> vocab.json, merges.txt
+if train_tokenizer:
+    tokenizer = CharBPETokenizer()
+    tokenizer.train(files=["data/chat_sample.txt"], vocab_size=1500, special_tokens=special_tokens, min_frequency=1)
+    tokenizer.save_model(f"data")
 
 tokenizer = CharBPETokenizer(vocab="data/vocab.json", merges="data/merges.txt")
-output = tokenizer.encode("상수란 그 값이 변하지 않는 불변량으로, 변수의 반대말이다.")
-print(output.tokens)
-recover = tokenizer.decode(output.ids)
+tokenize_sample_text = tokenizer.encode("인연이 있다고 생각해?")
+print(tokenize_sample_text.tokens)
+print("--")
+
+recover = tokenizer.decode(tokenize_sample_text.ids)
 print(recover)
-
-train_data = pd.read_csv("data/chat.csv", header=0)
-print("--")
-print(train_data.head(10))
-print("--")
-print(train_data.loc[3])
 print("--")
 
+train_data = pd.read_csv("data/chat_sample.csv", header=0)
+print(train_data.head(5))
+print(len(train_data))
+print("--")
+
+query_tokens = []
+answer_tokens = []
+query_lengths = {}
+answer_lengths = {}
+for i in range(len(train_data)):
+    row = train_data.loc[i]
+    query = row["Q"]
+    answer = row["A"]
+
+    tokenize_query = tokenizer.encode(query)
+    tokenize_answer = tokenizer.encode(answer)
+
+    query_tokens.append(tokenize_query.ids)
+    answer_tokens.append(tokenize_answer.ids)
+
+    query_length = len(tokenize_query.ids)
+    answer_length = len(tokenize_answer.ids)
+
+    if query_length in query_lengths:
+        query_lengths[query_length] += 1
+    else:
+        query_lengths[query_length] = 1
+
+    if answer_length in answer_lengths:
+        answer_lengths[answer_length] += 1
+    else:
+        answer_lengths[answer_length] = 1
+
+if show_analysis:
+    sample_data = train_data.loc[99]
+    print(sample_data)
+    print("--")
+
+    sample_query = sample_data["Q"]
+    print(sample_query)
+    print("--")
+
+    tokenize_sample_query = tokenizer.encode(sample_query)
+    print(tokenize_sample_query.tokens)
+    print(tokenize_sample_query.ids)
+    print("--")
+
+    x_axis = list(range(1, max(max(query_lengths), max(answer_lengths)) + 1))
+    query_length_list = [query_lengths.get(i, 0) for i in x_axis]
+    answer_length_list = [answer_lengths.get(i, 0) for i in x_axis]
+    x_axis = [str(i) for i in x_axis]
+
+    plot_query = figure(title="query dist.", x_range=x_axis, plot_height=250, toolbar_location=None, tools="")
+    plot_query.vbar(x=x_axis, top=query_length_list, width=0.9)
+    plot_query.xgrid.grid_line_color = None
+    plot_query.y_range.start = 0
+
+    plot_answer = figure(title="answer dist.", x_range=x_axis, plot_height=250, toolbar_location=None, tools="")
+    plot_answer.vbar(x=x_axis, top=answer_length_list, width=0.9)
+    plot_answer.xgrid.grid_line_color = None
+    plot_answer.y_range.start = 0
+
+    show(column(plot_query, plot_answer))
+
+max_seq_length = 16
+
+
+class LoadDataset(Dataset):
+
+    def __init__(self, x_data, y_data):
+        super(LoadDataset, self).__init__()
+        self.x_data = x_data
+        self.y_data = y_data
+
+    def __getitem__(self, item):
+        return self.x_data[item], self.y_data[item]
+
+    def __len__(self):
+        return len(self.y_data)
+
+
+class MaxPadBatch:
+
+    def __init__(self, max_len=24):
+        super(MaxPadBatch, self).__init__()
+        self.max_len = max_len
+
+    def __call__(self, batch):
+        batch_x = []
+        batch_y = []
+        for x, y in batch:
+            batch_x.append(torch.tensor(x).long())
+            batch_y.append(torch.tensor([special_tokens.index("<bos>")] + y + [special_tokens.index("<eos>")]).long())
+        pad_index = special_tokens.index("<pad>")
+        pad_x = [ftn.pad(item, [0, self.max_len - item.shape[0]], value=pad_index).detach() for item in batch_x]
+        pad_y = [ftn.pad(item, [0, self.max_len - item.shape[0]], value=pad_index).detach() for item in batch_y]
+        return torch.stack(pad_x), torch.stack(pad_y), len(batch)
+
+
+chat_dataset = LoadDataset(query_tokens, answer_tokens)
+chat_data_loader = DataLoader(chat_dataset, batch_size=32, collate_fn=MaxPadBatch(max_seq_length))
+
+
+class Encoder(nn.Module):
+
+    def __init__(self, input_size, embedding_size, hidden_size):
+        super(Encoder, self).__init__()
+        self.input_size = input_size
+        self.embedding_size = embedding_size
+        self.hidden_size = hidden_size
+        self.rnn = nn.GRU(self.embedding_size, self.hidden_size, batch_first=True)
+
+    def forward(self, x, embedding):
+        # x: [batch, seq_length]
+        x = embedding(x)
+        x, hidden = self.rnn(x)
+        return x, hidden
+
+
+class Decoder(nn.Module):
+
+    def __init__(self, output_size, embedding_size, hidden_size):
+        super(Decoder, self).__init__()
+        self.output_size = output_size
+        self.embedding_size = embedding_size
+        self.hidden_size = hidden_size
+        self.rnn = nn.GRU(self.embedding_size, self.hidden_size, batch_first=True)
+        self.fc = nn.Linear(self.hidden_size, self.output_size)
+
+    def forward(self, x, hidden, embedding):
+        # x: [batch] --> need second dimension as 1
+        # hidden: [encoder_layers = 1, batch, hidden_dim]
+        x = x.unsqueeze(1)
+        x = embedding(x)
+        x, hidden = self.rnn(x, hidden)
+        x = self.fc(x.squeeze(1))
+        return x, hidden
+
+
+class Seq2Seq(nn.Module):
+
+    def __init__(self, encoder, decoder):
+        super(Seq2Seq, self).__init__()
+        self.encoder = encoder
+        self.decoder = decoder
+        self.embedding = nn.Embedding(self.encoder.input_size, self.encoder.embedding_size)
+
+    def forward(self, source, target, teacher_forcing=0.5):
+        # source: [batch, seq_length]
+        # target: [batch, seq_length]
+        batch_size = target.shape[0]
+        target_seq_length = target.shape[1]
+        target_vocab_size = self.decoder.output_size
+
+        _, hidden = self.encoder(source, self.embedding)
+        decoder_input = torch.tensor([special_tokens.index("<bos>")] * batch_size).long()
+
+        decoder_outputs = torch.zeros(batch_size, target_seq_length, target_vocab_size)
+        for t in range(1, target_seq_length):
+            decoder_output, hidden = self.decoder(decoder_input, hidden, self.embedding)
+            decoder_outputs[:, t, :] = decoder_output
+            teacher = target[:, t]
+            top1 = decoder_output.argmax(1)
+            decoder_input = teacher if random.random() < teacher_forcing else top1
+        return decoder_outputs
+
+
+embedding_dim = 128
+hidden_dim = 128
+enc = Encoder(tokenizer.get_vocab_size(), embedding_dim, hidden_dim)
+dec = Decoder(tokenizer.get_vocab_size(), embedding_dim, hidden_dim)
+seq2seq = Seq2Seq(enc, dec)
+
+if train_seq2seq:
+    learning_rate = 1e-3
+    optimizer = torch.optim.Adam(seq2seq.parameters(), lr=learning_rate)
+
+    criterion = nn.CrossEntropyLoss()
+
+    for epoch in range(200):
+        seq2seq.train()
+        epoch_loss = 0.0
+        for batch_source, batch_target, batch_length in chat_data_loader:
+            optimizer.zero_grad()
+            seq2seq_output = seq2seq(batch_source, batch_target)
+
+            seq2seq_output_dim = seq2seq_output.shape[-1]
+            seq2seq_output_drop = seq2seq_output[:, 1:, :].reshape(-1, seq2seq_output_dim)
+            batch_target_drop = batch_target[:, 1:].reshape(-1)
+            loss = criterion(seq2seq_output_drop, batch_target_drop)
+            loss.backward()
+            optimizer.step()
+            epoch_loss += loss.item() / batch_length
+
+        if epoch % 10 == 0:
+            print(f"{epoch} epoch loss: {epoch_loss:.4f} / ppl: {math.exp(epoch_loss):.4f}")
+            seq2seq.eval()
+            test_query = "남자친구가 의심해"
+            tokenize_test_query = tokenizer.encode(test_query)
+            tensor_test_query = torch.tensor(tokenize_test_query.ids).long().unsqueeze(0)
+            test_output = torch.tensor([[2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]]).long()
+            test_output = seq2seq(tensor_test_query, test_output, 0.0)[:, 1:, :].squeeze(0).argmax(1).detach().tolist()
+            recover_output = tokenizer.decode(test_output)
+            print(recover_output.split("<eos>")[0])
+
+    torch.save(seq2seq.state_dict(), "checkpoint/seq2seq.pt")
+
+seq2seq.load_state_dict(torch.load("checkpoint/seq2seq.pt"))
+seq2seq.eval()
+test_query = "너덜너덜해진 느낌이야"
+tokenize_test_query = tokenizer.encode(test_query)
+tensor_test_query = torch.tensor(tokenize_test_query.ids).long().unsqueeze(0)
+test_output = torch.tensor([[2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]]).long()
+test_output = seq2seq(tensor_test_query, test_output, 0.0)[:, 1:, :].squeeze(0).argmax(1).detach().tolist()
+recover_output = tokenizer.decode(test_output)
+print(recover_output.split("<eos>")[0])

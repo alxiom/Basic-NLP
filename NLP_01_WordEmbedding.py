@@ -1,15 +1,14 @@
-# Created by Alex Kim
 import gensim
+import konlpy  # required MeCab install
 import numpy as np
 import pandas as pd
 import torch
 from torch import nn
 from torch.utils.data import Dataset, DataLoader
-from tqdm import tqdm
 from bokeh.plotting import figure, show
+from tqdm import tqdm
 
-import konlpy  # required MeCab install
-
+# Created by Alex Kim
 torch.manual_seed(42)
 
 text = """
@@ -32,25 +31,31 @@ words = list(set(text.split()))
 words.insert(0, "[PAD]")  # 공백 문자열 (0)
 words.insert(1, "[UNK]")  # 알 수 없는 문자열 (1)
 print(f"words: {words}")
+print("--")
 
 n_word = len(words)
 print(f"unique word count: {n_word}")
+print("--")
 
 word_to_id = {}
 for i, word in enumerate(words):
     word_to_id[word] = i
 print(word_to_id)
+print("--")
 
 id_to_word = {value: key for key, value in word_to_id.items()}
 print(id_to_word)
+print("--")
 
 sentences = text.split("\n")
 print(sentences)
+print("--")
 
 sentences_tokens = []
 for sentence in sentences:
     sentences_tokens.append(sentence.split())
 print(sentences_tokens)
+print("--")
 
 window_size = 2
 word_pair_list = []
@@ -63,11 +68,13 @@ for sentence_tokens in sentences_tokens:
         word_pair_list.append({"c": center, "o": outer})
 print(len(word_pair_list))
 print(word_pair_list)
+print("--")
 
 
 class LoadDataset(Dataset):
 
     def __init__(self, x_data, y_data):
+        super(LoadDataset, self).__init__()
         self.x_data = x_data
         self.y_data = y_data
 
@@ -125,11 +132,13 @@ for word_pair in word_pair_list:
         skip_gram_labels.append(outer_token)
 print(f"skip-gram tokens: {skip_gram_tokens}")
 print(f"skip-gram labels: {skip_gram_labels}")
+print("--")
 
 skip_gram_token_ids = np.array([word_to_id[token] for token in skip_gram_tokens])
 skip_gram_label_ids = np.array([word_to_id[label] for label in skip_gram_labels])
 print(f"skip-gram token_ids: {skip_gram_token_ids}")
 print(f"skip-gram label_ids: {skip_gram_label_ids}")
+print("--")
 
 skip_gram_dataset = LoadDataset(skip_gram_token_ids, skip_gram_label_ids)
 skip_gram_data_loader = DataLoader(skip_gram_dataset, batch_size=512)
@@ -188,10 +197,13 @@ for word_pair in word_pair_list:
     cbow_labels.append(c)
 print(f"tokens : {cbow_tokens}")
 print(f"labels : {cbow_labels}")
+print("--")
+
 cbow_token_ids = np.array([[word_to_id[t] for t in token] for token in cbow_tokens])
 cbow_label_ids = np.array([word_to_id[label] for label in cbow_labels])
 print(f"cbow token_ids: {cbow_token_ids}")
 print(f"cbow label_ids: {cbow_label_ids}")
+print("--")
 
 cbow_dataset = LoadDataset(cbow_token_ids, cbow_label_ids)
 cbow_data_loader = DataLoader(cbow_dataset, batch_size=512)
@@ -228,6 +240,7 @@ word2vec.train(sentences=sentences_tokens, total_examples=len(sentences_tokens),
 
 similar = word2vec.wv.most_similar(u"국어는")
 print(similar)
+print("--")
 
 wv_vocab_list = list(word2vec.wv.vocab)
 wv_vocab_dict = {i: token for i, token in enumerate(wv_vocab_list)}
@@ -240,6 +253,7 @@ fasttext.train(sentences=sentences_tokens, total_examples=len(sentences_tokens),
 
 similar = fasttext.wv.most_similar(u"국어는")
 print(similar)
+print("--")
 
 ft_vocab_list = list(fasttext.wv.vocab)
 ft_vocab_dict = {i: token for i, token in enumerate(ft_vocab_list)}
@@ -248,17 +262,21 @@ draw_figure(list(fasttext.wv[ft_vocab_list]), ft_vocab_dict, "gensim: fasttext")
 # NSMC + konlpy + gensim
 nsmc_data = pd.read_csv("data/ratings.txt", header=0, delimiter="\t", quoting=3)
 print(f"data count: {len(nsmc_data)}")
+print("--")
 
 nsmc_data["document"] = nsmc_data["document"].str.replace("[^ㄱ-ㅎㅏ-ㅣ가-힣 ]", "")
 print(f"data count (korean filtered): {len(nsmc_data)}")
+print("--")
 
 nsmc_data = nsmc_data.dropna(how="any")
 print(f"data count (null filtered): {len(nsmc_data)}")
+print("--")
 
 stopwords = ["의", "가", "이", "은", "들", "는", "좀", "잘", "걍", "과", "도", "를", "으로", "자", "에", "와", "한", "하다"]
 
 okt = konlpy.tag.Okt()
 print(okt.morphs("아버지가방에들어가신다", stem=True))
+print("--")
 
 nsmc_tokens = []
 for i, document in enumerate(tqdm(nsmc_data["document"], total=len(nsmc_data))):
@@ -270,3 +288,4 @@ word2vec_200 = gensim.models.Word2Vec(sentences=nsmc_tokens, size=200, window=5,
 nsmc_vocab_list = list(word2vec_200.wv.vocab)
 similar = word2vec_200.wv.most_similar("최민식")
 print(similar)
+print("--")

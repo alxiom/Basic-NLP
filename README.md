@@ -5,6 +5,7 @@
 + python >= 3.6
 
 ## 준비
++ 기본 실습 자료
 ```bash
 git clone https://github.com/hyoungseok/multicampus-NLP.git
 cd multicampus-NLP
@@ -13,9 +14,8 @@ curl -s https://raw.githubusercontent.com/konlpy/konlpy/master/scripts/mecab.sh 
 mkdir data
 wget https://raw.githubusercontent.com/e9t/nsmc/master/ratings.txt -O data/ratings.txt
 wget https://raw.githubusercontent.com/songys/Chatbot_data/master/ChatbotData%20.csv -O data/chat.csv
-wget https://dumps.wikimedia.org/kowiki/latest/kowiki-latest-pages-meta-current.xml.bz2 -O data/kowiki.xml.bz2
-python -m wikiextractor.WikiExtractor -o data/kowiki --json data/kowiki.xml.bz2
 ```
++ (optional) [koWiki](https://drive.google.com/file/d/1viFZcVWba5jtVBm3PcbHlBBCKRldV6tn/view?usp=sharing) 텍스트
 
 ## 목차
 1. Word Embedding
