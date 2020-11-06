@@ -17,17 +17,17 @@ np.random.seed(42)
 torch.manual_seed(42)
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-special_tokens = ["<pad>", "<unk>", "<bos>", "<eos>", "<sep>", "<cls>", "<mask>"]
+special = ["<pad>", "<unk>", "<bos>", "<eos>", "<sep>", "<cls>", "<mask>"]
 
 sample_chat = False
 train_tokenizer = False
 show_analysis = False
-train_seq2seq = False
+train_seq2seq = True
 
 if sample_chat:
     samples = 128
-    train_data = pd.read_csv("data/chat.csv", header=0).sample(samples)[["Q", "A"]].reset_index(drop=True)
-    train_data.to_csv("data/chat_sample.csv")
+    train_data = pd.read_csv("data/chat.csv", header=0).sample(samples).reset_index(drop=True).drop(columns=["label"])
+    train_data.to_csv("data/chat_sample.csv", index=False)
     with open("data/chat_sample.txt", "w", encoding="utf-8") as f:
         for i in range(len(train_data)):
             row = train_data.loc[i]
@@ -35,10 +35,10 @@ if sample_chat:
             answer = row["A"]
             f.write(f"{query} {answer}\n")
 
-# chat text --> vocab.json, merges.txt
+# chat sample text --> vocab.json, merges.txt
 if train_tokenizer:
     tokenizer = CharBPETokenizer()
-    tokenizer.train(files=["data/chat_sample.txt"], vocab_size=1500, special_tokens=special_tokens, min_frequency=1)
+    tokenizer.train(files=["data/chat_sample.txt"], vocab_size=1500, special_tokens=special, min_frequency=1)
     tokenizer.save_model(f"data")
 
 tokenizer = CharBPETokenizer(vocab="data/vocab.json", merges="data/merges.txt")
@@ -140,14 +140,14 @@ class MaxPadBatch:
         batch_y = []
         for x, y in batch:
             batch_x.append(torch.tensor(x).long())
-            batch_y.append(torch.tensor([special_tokens.index("<bos>")] + y + [special_tokens.index("<eos>")]).long())
-        pad_index = special_tokens.index("<pad>")
+            batch_y.append(torch.tensor([special.index("<bos>")] + y + [special.index("<eos>")]).long())
+        pad_index = special.index("<pad>")
         pad_x = [ftn.pad(item, [0, self.max_len - item.shape[0]], value=pad_index).detach() for item in batch_x]
         pad_y = [ftn.pad(item, [0, self.max_len - item.shape[0]], value=pad_index).detach() for item in batch_y]
         return torch.stack(pad_x), torch.stack(pad_y), len(batch)
 
 
-max_seq_length = 16
+max_seq_length = 20
 chat_dataset = LoadDataset(query_tokens, answer_tokens)
 chat_data_loader = DataLoader(chat_dataset, batch_size=32, collate_fn=MaxPadBatch(max_seq_length))
 
@@ -204,7 +204,7 @@ class Seq2Seq(nn.Module):
         target_vocab_size = self.decoder.output_size
 
         _, hidden = self.encoder(source, self.embedding)
-        decoder_input = torch.tensor([special_tokens.index("<bos>")] * batch_size).long()
+        decoder_input = torch.tensor([special.index("<bos>")] * batch_size).long()
 
         decoder_outputs = torch.zeros(batch_size, target_seq_length, target_vocab_size)
         for t in range(1, target_seq_length):
@@ -222,13 +222,15 @@ enc = Encoder(tokenizer.get_vocab_size(), embedding_dim, hidden_dim)
 dec = Decoder(tokenizer.get_vocab_size(), embedding_dim, hidden_dim)
 seq2seq = Seq2Seq(enc, dec)
 
+decode_test = torch.tensor([[special.index("<bos>")] + [special.index("<pad>")] * (max_seq_length - 1)]).long()
+
 if train_seq2seq:
     learning_rate = 1e-3
     optimizer = torch.optim.Adam(seq2seq.parameters(), lr=learning_rate)
 
     criterion = nn.CrossEntropyLoss()
 
-    for epoch in range(200):
+    for epoch in range(300):
         seq2seq.train()
         epoch_loss = 0.0
         for batch_source, batch_target, batch_length in chat_data_loader:
@@ -246,11 +248,10 @@ if train_seq2seq:
         if epoch % 10 == 0:
             print(f"{epoch} epoch loss: {epoch_loss:.4f} / ppl: {math.exp(epoch_loss):.4f}")
             seq2seq.eval()
-            test_query = "남자친구가 의심해"
+            test_query = "썸 타는 것도 귀찮아."
             tokenize_test_query = tokenizer.encode(test_query)
             tensor_test_query = torch.tensor(tokenize_test_query.ids).long().unsqueeze(0)
-            test_output = torch.tensor([[2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]]).long()
-            test_output = seq2seq(tensor_test_query, test_output, 0.0)[:, 1:, :].squeeze(0).argmax(1).detach().tolist()
+            test_output = seq2seq(tensor_test_query, decode_test, 0.0)[:, 1:, :].squeeze(0).argmax(1).detach().tolist()
             recover_output = tokenizer.decode(test_output)
             print(recover_output.split("<eos>")[0])
 
@@ -258,10 +259,9 @@ if train_seq2seq:
 
 seq2seq.load_state_dict(torch.load("checkpoint/seq2seq.pt"))
 seq2seq.eval()
-test_query = "너덜너덜해진 느낌이야"
+test_query = "죽을거 같네"
 tokenize_test_query = tokenizer.encode(test_query)
 tensor_test_query = torch.tensor(tokenize_test_query.ids).long().unsqueeze(0)
-test_output = torch.tensor([[2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]]).long()
-test_output = seq2seq(tensor_test_query, test_output, 0.0)[:, 1:, :].squeeze(0).argmax(1).detach().tolist()
+test_output = seq2seq(tensor_test_query, decode_test, 0.0)[:, 1:, :].squeeze(0).argmax(1).detach().tolist()
 recover_output = tokenizer.decode(test_output)
 print(recover_output.split("<eos>")[0])
