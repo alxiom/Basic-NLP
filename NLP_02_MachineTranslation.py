@@ -22,7 +22,7 @@ special = ["<pad>", "<unk>", "<bos>", "<eos>", "<sep>", "<cls>", "<mask>"]
 sample_chat = False
 train_tokenizer = False
 show_analysis = False
-train_seq2seq = False
+train_seq2seq = True
 
 if sample_chat:
     samples = 128
@@ -228,7 +228,7 @@ if train_seq2seq:
     learning_rate = 1e-3
     optimizer = torch.optim.Adam(seq2seq.parameters(), lr=learning_rate)
 
-    criterion = nn.CrossEntropyLoss()
+    criterion = nn.CrossEntropyLoss(ignore_index=special.index("<pad>"))
 
     for epoch in range(300):
         seq2seq.train()
@@ -248,20 +248,20 @@ if train_seq2seq:
         if epoch % 10 == 0:
             print(f"{epoch} epoch loss: {epoch_loss:.4f} / ppl: {math.exp(epoch_loss):.4f}")
             seq2seq.eval()
-            test_query = "썸 타는 것도 귀찮아."
-            tokenize_test_query = tokenizer.encode(test_query)
-            tensor_test_query = torch.tensor(tokenize_test_query.ids).long().unsqueeze(0)
-            test_output = seq2seq(tensor_test_query, decode_test, 0.0)[:, 1:, :].squeeze(0).argmax(1).detach().tolist()
-            recover_output = tokenizer.decode(test_output)
-            print(recover_output.split("<eos>")[0])
+            test = "썸 타는 것도 귀찮아."
+            test_token = tokenizer.encode(test)
+            test_tensor = torch.tensor(test_token.ids).long().unsqueeze(0)
+            test_output = seq2seq(test_tensor, decode_test, 0.0)[:, 1:, :].squeeze(0).argmax(1).detach().tolist()
+            recover_test_output = tokenizer.decode(test_output)
+            print(recover_test_output.split("<eos>")[0])
 
     torch.save(seq2seq.state_dict(), "checkpoint/seq2seq.pt")
 
 seq2seq.load_state_dict(torch.load("checkpoint/seq2seq.pt"))
 seq2seq.eval()
-test_query = "죽을거 같네"
-tokenize_test_query = tokenizer.encode(test_query)
-tensor_test_query = torch.tensor(tokenize_test_query.ids).long().unsqueeze(0)
-test_output = seq2seq(tensor_test_query, decode_test, 0.0)[:, 1:, :].squeeze(0).argmax(1).detach().tolist()
-recover_output = tokenizer.decode(test_output)
-print(recover_output.split("<eos>")[0])
+test = "죽을거 같네"
+test_token = tokenizer.encode(test)
+test_tensor = torch.tensor(test_token.ids).long().unsqueeze(0)
+test_output = seq2seq(test_tensor, decode_test, 0.0)[:, 1:, :].squeeze(0).argmax(1).detach().tolist()
+recover_test_output = tokenizer.decode(test_output)
+print(recover_test_output.split("<eos>")[0])
