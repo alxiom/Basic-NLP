@@ -195,18 +195,18 @@ class Seq2Seq(nn.Module):
         self.encoder = encoder
         self.decoder = decoder
         self.embedding = nn.Embedding(self.encoder.input_size, self.encoder.embedding_size)
+        self.target_vocab_size = self.decoder.output_size
 
     def forward(self, source, target, teacher_forcing=0.5):
         # source: [batch, seq_length]
         # target: [batch, seq_length]
         batch_size = target.shape[0]
         target_seq_length = target.shape[1]
-        target_vocab_size = self.decoder.output_size
 
         _, hidden = self.encoder(source, self.embedding)
         decoder_input = torch.tensor([special.index("<bos>")] * batch_size).long()
 
-        decoder_outputs = torch.zeros(batch_size, target_seq_length, target_vocab_size)
+        decoder_outputs = torch.zeros(batch_size, target_seq_length, self.target_vocab_size)
         for t in range(1, target_seq_length):
             decoder_output, hidden = self.decoder(decoder_input, hidden, self.embedding)
             decoder_outputs[:, t, :] = decoder_output
