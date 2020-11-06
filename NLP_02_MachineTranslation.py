@@ -25,7 +25,8 @@ show_analysis = False
 train_seq2seq = False
 
 if sample_chat:
-    train_data = pd.read_csv("data/chat.csv", header=0).sample(128)[["Q", "A"]].reset_index(drop=True)
+    samples = 128
+    train_data = pd.read_csv("data/chat.csv", header=0).sample(samples)[["Q", "A"]].reset_index(drop=True)
     train_data.to_csv("data/chat_sample.csv")
     with open("data/chat_sample.txt", "w", encoding="utf-8") as f:
         for i in range(len(train_data)):
