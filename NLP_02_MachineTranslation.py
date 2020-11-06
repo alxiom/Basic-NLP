@@ -114,8 +114,6 @@ if show_analysis:
 
     show(column(plot_query, plot_answer))
 
-max_seq_length = 16
-
 
 class LoadDataset(Dataset):
 
@@ -149,6 +147,7 @@ class MaxPadBatch:
         return torch.stack(pad_x), torch.stack(pad_y), len(batch)
 
 
+max_seq_length = 16
 chat_dataset = LoadDataset(query_tokens, answer_tokens)
 chat_data_loader = DataLoader(chat_dataset, batch_size=32, collate_fn=MaxPadBatch(max_seq_length))
 
