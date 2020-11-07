@@ -7,13 +7,9 @@ from torch import Tensor
 from torch.nn import functional as ftn
 
 # Created by Alex Kim
-# main reference https://towardsdatascience.com/transformers-from-scratch-in-pytorch-8777e346ca51
 random.seed(42)
 np.random.seed(42)
 torch.manual_seed(42)
-
-# TODO: decoder masking
-# TODO: decoder last linear layer
 
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -28,8 +24,17 @@ def positional_encoding(seq_len: int, embedding_dim: int) -> Tensor:
     return torch.from_numpy(pe)
 
 
-def scaled_dot_product_attention(query: Tensor, key: Tensor, value: Tensor) -> Tensor:
+def mask(x: Tensor, mask_value: float = 0.0, mask_diagonal: bool = False):
+    batch_dim, seq_len, embedding_dim = x.size()
+    indices = torch.triu_indices(seq_len, embedding_dim, offset=0 if mask_diagonal else 1)
+    x[:, indices[0], indices[1]] = mask_value
+    return x
+
+
+def scaled_dot_product_attention(query: Tensor, key: Tensor, value: Tensor, masking: bool) -> Tensor:
     dot_prod = query.bmm(key.transpose(1, 2))
+    if masking:
+        dot_prod = mask(dot_prod)
     scale = query.size(-1) ** 0.5
     attention = ftn.softmax(dot_prod / scale, dim=-1).bmm(value)
     return attention
@@ -37,22 +42,23 @@ def scaled_dot_product_attention(query: Tensor, key: Tensor, value: Tensor) -> T
 
 class AttentionHead(nn.Module):
 
-    def __init__(self, embedding_dim: int, query_dim: int, value_dim: int):
+    def __init__(self, embedding_dim: int, query_dim: int, value_dim: int, masking: bool):
         super(AttentionHead, self).__init__()
         self.q = nn.Linear(embedding_dim, query_dim)
         self.k = nn.Linear(embedding_dim, query_dim)  # key_dim = query_dim
         self.v = nn.Linear(embedding_dim, value_dim)
+        self.masking = masking
 
     def forward(self, query: Tensor, key: Tensor, value: Tensor) -> Tensor:
-        return scaled_dot_product_attention(self.q(query), self.k(key), self.v(value))
+        return scaled_dot_product_attention(self.q(query), self.k(key), self.v(value), self.masking)
 
 
 class MultiHeadAttention(nn.Module):
 
-    def __init__(self, num_heads: int, embedding_dim: int, query_dim: int, value_dim: int):
+    def __init__(self, num_heads: int, embedding_dim: int, query_dim: int, value_dim: int, masking: bool = False):
         super(MultiHeadAttention, self).__init__()
         self.heads = nn.ModuleList(
-            [AttentionHead(embedding_dim, query_dim, value_dim) for _ in range(num_heads)]
+            [AttentionHead(embedding_dim, query_dim, value_dim, masking) for _ in range(num_heads)]
         )
         self.linear = nn.Linear(num_heads * value_dim, embedding_dim)
 
@@ -151,7 +157,7 @@ class TransformerDecoderLayer(nn.Module):
         super(TransformerDecoderLayer, self).__init__()
         query_dim = value_dim = embedding_dim // num_heads
         self.masked_attention = Residual(
-            MultiHeadAttention(num_heads, embedding_dim, query_dim, value_dim),
+            MultiHeadAttention(num_heads, embedding_dim, query_dim, value_dim, masking=True),
             input_dim=embedding_dim,
             dropout=dropout,
         )
@@ -187,14 +193,13 @@ class TransformerDecoder(nn.Module):
         self.layers = nn.ModuleList(
             [TransformerDecoderLayer(embedding_dim, num_heads, hidden_dim, dropout) for _ in range(num_layers)]
         )
-        self.linear = nn.Linear(embedding_dim, embedding_dim)
 
     def forward(self, x: Tensor, context: Tensor) -> Tensor:
-        seq_len, model_dim = x.size(1), x.size(2)
-        x += positional_encoding(seq_len, model_dim)
+        seq_len, embedding_dim = x.size(1), x.size(2)
+        x += positional_encoding(seq_len, embedding_dim)
         for layer in self.layers:
             x = layer(x, context)
-        return torch.softmax(self.linear(x), dim=-1)
+        return x
 
 
 class Transformer(nn.Module):
@@ -209,6 +214,7 @@ class Transformer(nn.Module):
             dropout: float = 0.1,
     ):
         super(Transformer, self).__init__()
+        self.embedding = nn.Linear(vocab_size, embedding_dim, bias=False)
         self.encoder = TransformerEncoder(
             num_layers=num_encoder_layers,
             embedding_dim=embedding_dim,
@@ -221,14 +227,24 @@ class Transformer(nn.Module):
             embedding_dim=embedding_dim,
             num_heads=num_heads,
             hidden_dim=hidden_dim,
-            dropout=dropout,
+            dropout=dropout
         )
 
     def forward(self, source: Tensor, target: Tensor) -> Tensor:
-        return self.decoder(target, self.encoder(source))
+        source = self.embedding(source)
+        source = self.encoder(source)
+
+        target = self.embedding(target)
+        target = self.decoder(target, source)
+        target = torch.matmul(target, self.embedding.weight)
+        target = torch.softmax(target, dim=-1)
+        return target
 
 
-src = torch.rand(64, 16, 512)
-tgt = torch.rand(64, 16, 512)
+batch_size = 64
+seq_length = 16
+vocab_size = 8000
+src = torch.rand(batch_size, seq_length, vocab_size)
+tgt = torch.rand(batch_size, seq_length, vocab_size)
 out = Transformer()(src, tgt)
 print(out.shape)
