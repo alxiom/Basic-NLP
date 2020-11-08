@@ -34,7 +34,7 @@ def mask(x: Tensor, mask_value: float = 0.0, mask_diagonal: bool = False):
 def scaled_dot_product_attention(query: Tensor, key: Tensor, value: Tensor, masking: bool) -> Tensor:
     dot_prod = query.bmm(key.transpose(1, 2))
     if masking:
-        dot_prod = mask(dot_prod)
+        dot_prod = mask(dot_prod, float("-inf"))
     scale = query.size(-1) ** 0.5
     attention = ftn.softmax(dot_prod / scale, dim=-1).bmm(value)
     return attention
