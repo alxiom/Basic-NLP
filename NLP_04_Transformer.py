@@ -24,7 +24,7 @@ def positional_encoding(seq_len: int, embedding_dim: int) -> Tensor:
     return torch.from_numpy(pe)
 
 
-def mask(x: Tensor, mask_value: float = 0.0, mask_diagonal: bool = False):
+def mask(x: Tensor, mask_value: float = 0.0, mask_diagonal: bool = False) -> Tensor:
     seq_len = x.size(1)
     indices = torch.triu_indices(seq_len, seq_len, offset=0 if mask_diagonal else 1)
     x[:, indices[0], indices[1]] = mask_value
@@ -77,7 +77,7 @@ class FeedForward(nn.Module):
             nn.Linear(hidden_dim, input_dim),
         )
 
-    def forward(self, x):
+    def forward(self, x) -> Tensor:
         return self.ff(x)
 
 
