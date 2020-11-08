@@ -11,7 +11,6 @@ pyenv global miniconda3-4.7.10
 conda install -y pytorch==1.3.1
 cd ~/multicampus-NLP
 pip install -r ~/requirements-ubuntu.txt 
-curl -s https://raw.githubusercontent.com/konlpy/konlpy/master/scripts/mecab.sh | bash -x
 mkdir data
 wget https://raw.githubusercontent.com/e9t/nsmc/master/ratings.txt -O data/ratings.txt
 wget https://raw.githubusercontent.com/songys/Chatbot_data/master/ChatbotData%20.csv -O data/chat.csv

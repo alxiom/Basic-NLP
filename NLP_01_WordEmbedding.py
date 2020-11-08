@@ -1,5 +1,5 @@
 import gensim
-import konlpy  # required MeCab install
+import konlpy
 import numpy as np
 import pandas as pd
 import torch

@@ -5,12 +5,13 @@
 + python >= 3.6
 
 ## 준비
-+ 기본 실습 자료
++ Ubuntu 기준
 ```bash
+cd
+sudo apt install -y git
 git clone https://github.com/hyoungseok/multicampus-NLP.git
 cd multicampus-NLP
-pip install -r requirements.txt
-curl -s https://raw.githubusercontent.com/konlpy/konlpy/master/scripts/mecab.sh | bash -x
+./setup-ubuntu.sh
 mkdir data
 wget https://raw.githubusercontent.com/e9t/nsmc/master/ratings.txt -O data/ratings.txt
 wget https://raw.githubusercontent.com/songys/Chatbot_data/master/ChatbotData%20.csv -O data/chat.csv
