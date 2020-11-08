@@ -206,6 +206,7 @@ class Transformer(nn.Module):
 
     def __init__(
             self,
+            vocab_size: int = 8000,
             num_encoder_layers: int = 6,
             num_decoder_layers: int = 6,
             embedding_dim: int = 512,
@@ -214,7 +215,7 @@ class Transformer(nn.Module):
             dropout: float = 0.1,
     ):
         super(Transformer, self).__init__()
-        self.embedding = nn.Linear(vocab_size, embedding_dim, bias=False)
+        self.embedding = nn.Embedding(vocab_size, embedding_dim)
         self.encoder = TransformerEncoder(
             num_layers=num_encoder_layers,
             embedding_dim=embedding_dim,
@@ -233,10 +234,9 @@ class Transformer(nn.Module):
     def forward(self, source: Tensor, target: Tensor) -> Tensor:
         source = self.embedding(source)
         source = self.encoder(source)
-
         target = self.embedding(target)
         target = self.decoder(target, source)
-        target = torch.matmul(target, self.embedding.weight)
+        target = torch.matmul(target, self.embedding.weight.transpose(0, 1))
         target = torch.softmax(target, dim=-1)
         return target
 
@@ -244,7 +244,9 @@ class Transformer(nn.Module):
 batch_size = 64
 seq_length = 16
 vocab_size = 8000
-src = torch.rand(batch_size, seq_length, vocab_size)
-tgt = torch.rand(batch_size, seq_length, vocab_size)
-out = Transformer()(src, tgt)
+src = torch.randint(0, vocab_size, [batch_size, seq_length])
+tgt = torch.randint(0, vocab_size, [batch_size, seq_length])
+out = Transformer(vocab_size=vocab_size)(src, tgt)
+print(src)
+print(tgt)
 print(out.shape)
