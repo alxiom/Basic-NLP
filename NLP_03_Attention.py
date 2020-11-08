@@ -17,7 +17,7 @@ torch.manual_seed(42)
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 special = ["<pad>", "<unk>", "<bos>", "<eos>", "<sep>", "<cls>", "<mask>"]
 
-train_seq2seq_attention = True
+train_seq2seq_attention = False
 
 tokenizer = CharBPETokenizer(vocab="data/vocab.json", merges="data/merges.txt")
 
