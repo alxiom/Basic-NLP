@@ -1,4 +1,5 @@
 import random
+from dataclasses import dataclass
 
 import numpy as np
 import torch
@@ -11,8 +12,20 @@ random.seed(42)
 np.random.seed(42)
 torch.manual_seed(42)
 
-
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+
+@dataclass
+class TransformerConfig:
+    batch_size: int = 64
+    seq_len: int = 16
+    vocab_size: int = 8000
+    num_encoder_layers: int = 6
+    num_decoder_layers: int = 6
+    embedding_dim: int = 512
+    num_heads: int = 6
+    hidden_dim: int = 2048
+    dropout: float = 0.1
 
 
 def positional_encoding(seq_len: int, embedding_dim: int) -> Tensor:
@@ -204,31 +217,22 @@ class TransformerDecoder(nn.Module):
 
 class Transformer(nn.Module):
 
-    def __init__(
-            self,
-            vocab_size: int = 8000,
-            num_encoder_layers: int = 6,
-            num_decoder_layers: int = 6,
-            embedding_dim: int = 512,
-            num_heads: int = 6,
-            hidden_dim: int = 2048,
-            dropout: float = 0.1,
-    ):
+    def __init__(self, config):
         super(Transformer, self).__init__()
-        self.embedding = nn.Embedding(vocab_size, embedding_dim)
+        self.embedding = nn.Embedding(config.vocab_size, config.embedding_dim)
         self.encoder = TransformerEncoder(
-            num_layers=num_encoder_layers,
-            embedding_dim=embedding_dim,
-            num_heads=num_heads,
-            hidden_dim=hidden_dim,
-            dropout=dropout,
+            num_layers=config.num_encoder_layers,
+            embedding_dim=config.embedding_dim,
+            num_heads=config.num_heads,
+            hidden_dim=config.hidden_dim,
+            dropout=config.dropout,
         )
         self.decoder = TransformerDecoder(
-            num_layers=num_decoder_layers,
-            embedding_dim=embedding_dim,
-            num_heads=num_heads,
-            hidden_dim=hidden_dim,
-            dropout=dropout
+            num_layers=config.num_decoder_layers,
+            embedding_dim=config.embedding_dim,
+            num_heads=config.num_heads,
+            hidden_dim=config.hidden_dim,
+            dropout=config.dropout
         )
 
     def forward(self, source: Tensor, target: Tensor) -> Tensor:
@@ -241,12 +245,10 @@ class Transformer(nn.Module):
         return target
 
 
-batch_size = 64
-seq_length = 16
-vocab_size = 8000
-src = torch.randint(0, vocab_size, [batch_size, seq_length])
-tgt = torch.randint(0, vocab_size, [batch_size, seq_length])
-out = Transformer(vocab_size=vocab_size)(src, tgt)
-print(src)
-print(tgt)
-print(out.shape)
+tfm_config = TransformerConfig()
+src = torch.randint(0, tfm_config.vocab_size, [tfm_config.batch_size, tfm_config.seq_len])
+tgt = torch.randint(0, tfm_config.vocab_size, [tfm_config.batch_size, tfm_config.seq_len])
+out = Transformer(tfm_config)(src, tgt)
+print("source:", src.shape)
+print("target:", tgt.shape)
+print("output:", out.shape)
