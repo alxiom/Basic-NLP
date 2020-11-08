@@ -14,3 +14,4 @@ pip install -r ~/requirements-ubuntu.txt
 mkdir data
 wget https://raw.githubusercontent.com/e9t/nsmc/master/ratings.txt -O data/ratings.txt
 wget https://raw.githubusercontent.com/songys/Chatbot_data/master/ChatbotData%20.csv -O data/chat.csv
+sudo snap install pycharm-community --classic
