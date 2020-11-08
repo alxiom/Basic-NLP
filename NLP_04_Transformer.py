@@ -17,7 +17,6 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 @dataclass
 class TransformerConfig:
-    batch_size: int = 64
     seq_len: int = 16
     vocab_size: int = 8000
     num_encoder_layers: int = 6
@@ -245,9 +244,15 @@ class Transformer(nn.Module):
         return target
 
 
+# model config
 tfm_config = TransformerConfig()
-src = torch.randint(0, tfm_config.vocab_size, [tfm_config.batch_size, tfm_config.seq_len])
-tgt = torch.randint(0, tfm_config.vocab_size, [tfm_config.batch_size, tfm_config.seq_len])
+
+# train config
+batch_size = 64
+
+# test run
+src = torch.randint(0, tfm_config.vocab_size, [batch_size, tfm_config.seq_len])
+tgt = torch.randint(0, tfm_config.vocab_size, [batch_size, tfm_config.seq_len])
 out = Transformer(tfm_config)(src, tgt)
 print("source:", src.shape)
 print("target:", tgt.shape)
