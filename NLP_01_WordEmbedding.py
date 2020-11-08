@@ -147,6 +147,7 @@ skip_gram_model = SkipGram(n_word, embedding_dim)
 criterion = nn.CrossEntropyLoss()
 optimizer = torch.optim.Adam(skip_gram_model.parameters(), lr=1e-4)
 
+embedding_vectors = []
 for iteration in range(50):
     skip_gram_model.train()
     for epoch in range(500):
@@ -161,11 +162,10 @@ for iteration in range(50):
         print(f"iter: {iteration} / epoch: {epoch} / loss: {epoch_loss}")
 
     skip_gram_model.eval()
-    embedding_vectors = []
     for token_id in range(n_word):
         embedding_vector = skip_gram_model.get_embedding(torch.tensor([token_id]).long())
         embedding_vectors.append(embedding_vector.detach().tolist()[0])
-    draw_figure(embedding_vectors, id_to_word, "skip-gram")
+draw_figure(embedding_vectors, id_to_word, "skip-gram")
 
 
 # CBOW
@@ -212,6 +212,7 @@ cbow_model = CBOW(n_word, embedding_dim)
 criterion = nn.CrossEntropyLoss()
 optimizer = torch.optim.Adam(cbow_model.parameters(), lr=1e-4)
 
+embedding_vectors = []
 for iteration in range(50):
     cbow_model.train()
     for epoch in range(500):
@@ -226,11 +227,10 @@ for iteration in range(50):
         print(f"iter: {iteration} / epoch: {epoch} / loss: {epoch_loss}")
 
     cbow_model.eval()
-    embedding_vectors = []
     for token_id in range(n_word):
         embedding_vector = cbow_model.get_embedding(torch.tensor([token_id]).long())
         embedding_vectors.append(embedding_vector.detach().tolist()[0])
-    draw_figure(embedding_vectors, id_to_word, "CBOW")
+draw_figure(embedding_vectors, id_to_word, "CBOW")
 
 
 # Gensim: word2vec
