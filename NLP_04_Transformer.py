@@ -25,8 +25,8 @@ def positional_encoding(seq_len: int, embedding_dim: int) -> Tensor:
 
 
 def mask(x: Tensor, mask_value: float = 0.0, mask_diagonal: bool = False):
-    batch_dim, seq_len, embedding_dim = x.size()
-    indices = torch.triu_indices(seq_len, embedding_dim, offset=0 if mask_diagonal else 1)
+    seq_len = x.size(1)
+    indices = torch.triu_indices(seq_len, seq_len, offset=0 if mask_diagonal else 1)
     x[:, indices[0], indices[1]] = mask_value
     return x
 
