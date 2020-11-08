@@ -2,8 +2,8 @@ import random
 
 import numpy as np
 import torch
-from torch import nn
 from torch import Tensor
+from torch import nn
 from torch.nn import functional as ftn
 
 # Created by Alex Kim
