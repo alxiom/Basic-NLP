@@ -162,6 +162,7 @@ for iteration in range(50):
         print(f"iter: {iteration} / epoch: {epoch} / loss: {epoch_loss}")
 
     skip_gram_model.eval()
+    embedding_vectors = []
     for token_id in range(n_word):
         embedding_vector = skip_gram_model.get_embedding(torch.tensor([token_id]).long())
         embedding_vectors.append(embedding_vector.detach().tolist()[0])
@@ -227,6 +228,7 @@ for iteration in range(50):
         print(f"iter: {iteration} / epoch: {epoch} / loss: {epoch_loss}")
 
     cbow_model.eval()
+    embedding_vectors = []
     for token_id in range(n_word):
         embedding_vector = cbow_model.get_embedding(torch.tensor([token_id]).long())
         embedding_vectors.append(embedding_vector.detach().tolist()[0])
