@@ -173,14 +173,16 @@ class GPT(nn.Module):
             module.weight.data.fill_(1.0)
 
     def forward(self, x: Tensor, y: Tensor = None) -> (Tensor, Tensor):
-        x = self.embedding(x) + self.position_embedding[:, :x.size(1), :]
-        x = self.embedding_dropout(x)
-        x = self.decoder(x)
-        x = self.linear(x)
+        # embedding + position embedding
+        # embedding dropout 적용
+        # transformer decoder 입력
+        # one-hot 벡터로 변환
+        # cross entropy loss 계산
+        x = ""
 
         loss = None
         if y is not None:
-            loss = ftn.cross_entropy(x.view(-1, x.size(-1)), y.view(-1), ignore_index=-1)
+            loss = ""
         return x, loss
 
 
