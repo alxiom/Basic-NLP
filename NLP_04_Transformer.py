@@ -174,7 +174,7 @@ class TransformerDecoderLayer(nn.Module):
             dropout=dropout,
         )
         self.self_attention = Residual(
-            MultiHeadAttention(num_heads, embedding_dim, query_dim, value_dim),
+            MultiHeadAttention(num_heads, embedding_dim, query_dim, value_dim, masking=True),
             input_dim=embedding_dim,
             dropout=dropout,
         )
