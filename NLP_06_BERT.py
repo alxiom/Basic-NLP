@@ -131,7 +131,7 @@ class BertConfig:
     vocab_size: int = 8000
     num_encoder_layers: int = 6
     num_decoder_layers: int = 6
-    embedding_dim: int = 512
+    embedding_dim: int = 32
     num_heads: int = 6
     hidden_dim: int = 2048
     dropout: float = 0.1
@@ -292,8 +292,9 @@ class Bert(nn.Module):
         x_segment_embedding = self.segment_embedding(segment_label)
         x = x_token_embedding + x_segment_embedding + positional_encoding(seq_len, embedding_dim)
         x = self.encoder(x, pad_mask)
-        return x
+        return x[:, 0, :]
 
 
 bert = Bert(BertConfig)
-bert(bert_dataset[1]["bert_input"].unsqueeze(0), bert_dataset[1]["segment_label"].unsqueeze(0))
+out = bert(bert_dataset[1]["bert_input"].unsqueeze(0), bert_dataset[1]["segment_label"].unsqueeze(0))
+print(out)
