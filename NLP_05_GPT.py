@@ -178,11 +178,14 @@ class GPT(nn.Module):
         # transformer decoder 입력
         # one-hot 벡터로 변환
         # cross entropy loss 계산
-        x = ""
+        x = self.embedding(x) + self.position_embedding[:, :x.size(1), :]
+        x = self.embedding_dropout(x)
+        x = self.decoder(x)
+        x = self.linear(x)
 
         loss = None
         if y is not None:
-            loss = ""
+            loss = ftn.cross_entropy(x.view(-1, x.size(-1)), y.view(-1), ignore_index=-1)
         return x, loss
 
 
