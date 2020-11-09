@@ -31,24 +31,24 @@ def positional_encoding(seq_len: int, embedding_dim: int) -> Tensor:
     pe = np.zeros([seq_len, embedding_dim])
     for pos in range(seq_len):
         for i in range(0, embedding_dim, 2):
-            pe[pos, i] = np.sin(pos / (1e+4 ** ((2 * i) / embedding_dim)))
-            pe[pos, i + 1] = np.cos(pos / (1e+4 ** ((2 * (i + 1)) / embedding_dim)))
+            pe[pos, i] = ""
+            pe[pos, i + 1] = ""
     return torch.from_numpy(pe)
 
 
 def mask(x: Tensor, mask_value: float = 0.0, mask_diagonal: bool = False) -> Tensor:
     seq_len = x.size(1)
-    indices = torch.triu_indices(seq_len, seq_len, offset=0 if mask_diagonal else 1)
+    indices = ""
     x[:, indices[0], indices[1]] = mask_value
     return x
 
 
 def scaled_dot_product_attention(query: Tensor, key: Tensor, value: Tensor, masking: bool) -> Tensor:
-    dot_prod = query.bmm(key.transpose(1, 2))
+    dot_prod = ""
     if masking:
         dot_prod = mask(dot_prod, float("-inf"))
-    scale = query.size(-1) ** 0.5
-    attention = ftn.softmax(dot_prod / scale, dim=-1).bmm(value)
+    scale = ""
+    attention = ""
     return attention
 
 
@@ -235,12 +235,11 @@ class Transformer(nn.Module):
         )
 
     def forward(self, source: Tensor, target: Tensor) -> Tensor:
-        source = self.embedding(source)
-        source = self.encoder(source)
-        target = self.embedding(target)
-        target = self.decoder(target, source)
-        target = torch.matmul(target, self.embedding.weight.transpose(0, 1))
-        target = torch.softmax(target, dim=-1)
+        # source 임베딩 --> encoder 입력
+        # target 임베딩, source 임베딩 --> decoder 입력
+        # decoder 출력을 one-hot 변환 --> softmax
+        source = ""
+        target = ""
         return target
 
 

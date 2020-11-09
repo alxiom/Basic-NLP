@@ -119,11 +119,12 @@ class Attention(nn.Module):
 
     def forward(self, encoder_output, decoder_output):
         # 이번 decoder 출력이 encoder 모든 출력들과 얼마나 강한 관계가 있는지 측정
-        # 이번 decoder 출력과 encoder 모든 출력과 dot product 실행 --> sequence of scala --> softmax
+        # 이번 decoder 출력과 encoder 모든 출력과 dot product 실행 --> sequence of scala (=attention score)
+        # attention score --> softmax --> attention weight
         # 위에서 구한 강도에 따라서 encoder 모든 출력을 weight sum --> context_vector
-        attention_score = torch.bmm(decoder_output, encoder_output.transpose(1, 2))
-        attention_weight = self.softmax(attention_score)
-        context_vector = torch.bmm(attention_weight, encoder_output)
+        attention_score = ""
+        attention_weight = ""
+        context_vector = ""
         return context_vector
 
 
@@ -150,11 +151,14 @@ class Seq2SeqAttention(nn.Module):
         attention_outputs = torch.zeros(batch_size, target_seq_length, self.target_vocab_size)
         for t in range(1, target_seq_length):
             decoder_output, hidden = self.decoder(decoder_input, hidden, self.embedding)
-            context = self.attention(encoder_output, decoder_output)
-            attention_output = self.linear(torch.cat([decoder_output, context], dim=2).squeeze(1))
-            attention_outputs[:, t, :] = attention_output
+            # encoder output, decoder output 두 값을 이용하여 지금 decoding 할 context 생성
+            # decoder output, context 이용하여 attention 적용된 output 도출
+            # attention output 사용하여 greedy decoding
+            context = ""
+            attention_output = ""
+            attention_outputs[:, t, :] = ""
             teacher = target[:, t]
-            top1 = attention_output.argmax(1)
+            top1 = ""
             decoder_input = teacher if random.random() < teacher_forcing else top1
         return attention_outputs
 
