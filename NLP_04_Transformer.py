@@ -33,7 +33,7 @@ def positional_encoding(seq_len: int, embedding_dim: int) -> Tensor:
         for i in range(0, embedding_dim, 2):
             pe[pos, i] = np.sin(pos / (1e+4 ** ((2 * i) / embedding_dim)))
             pe[pos, i + 1] = np.cos(pos / (1e+4 ** ((2 * (i + 1)) / embedding_dim)))
-    return torch.from_numpy(pe)
+    return torch.from_numpy(pe).float()
 
 
 def mask(x: Tensor, mask_value: float = 0.0, mask_diagonal: bool = False) -> Tensor:
