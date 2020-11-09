@@ -1,6 +1,7 @@
 #!/bin/bash
 
 cd
+sudo apt install -y openjdk-8-jdk
 git clone https://github.com/pyenv/pyenv.git ~/.pyenv
 echo 'export PYENV_ROOT="$HOME/.pyenv"' >> ~/.bashrc
 echo 'export PATH="$PYENV_ROOT/bin:$PATH"' >> ~/.bashrc
