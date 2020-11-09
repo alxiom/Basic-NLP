@@ -3,5 +3,6 @@
 __pycache__
 data/koWiki.txt
 data/chat.csv
+data/chat.txt
 data/ratings.txt
 *.html
