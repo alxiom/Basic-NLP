@@ -31,24 +31,26 @@ def positional_encoding(seq_len: int, embedding_dim: int) -> Tensor:
     pe = np.zeros([seq_len, embedding_dim])
     for pos in range(seq_len):
         for i in range(0, embedding_dim, 2):
-            pe[pos, i] = ""
-            pe[pos, i + 1] = ""
+            pe[pos, i] = np.sin(pos / (1e+4 ** ((2 * i) / embedding_dim)))
+            pe[pos, i + 1] = np.cos(pos / (1e+4 ** ((2 * (i + 1)) / embedding_dim)))
     return torch.from_numpy(pe)
 
 
 def mask(x: Tensor, mask_value: float = 0.0, mask_diagonal: bool = False) -> Tensor:
     seq_len = x.size(1)
-    indices = ""
+    indices = torch.triu_indices(seq_len, seq_len, offset=0 if mask_diagonal else 1)
     x[:, indices[0], indices[1]] = mask_value
     return x
 
 
-def scaled_dot_product_attention(query: Tensor, key: Tensor, value: Tensor, masking: bool) -> Tensor:
-    dot_prod = ""
+def scaled_dot_product_attention(pad_mask: Tensor, query: Tensor, key: Tensor, value: Tensor, masking: bool) -> Tensor:
+    dot_prod = query.bmm(key.transpose(1, 2))
     if masking:
         dot_prod = mask(dot_prod, float("-inf"))
-    scale = ""
-    attention = ""
+    scale = query.size(-1) ** 0.5
+    pad_mask = pad_mask.unsqueeze(1).repeat(1, pad_mask.size(1), 1)
+    scaled_dot_product = (dot_prod / scale).masked_fill_(pad_mask, -1e+9)
+    attention = ftn.softmax(scaled_dot_product, dim=-1).bmm(value)
     return attention
 
 
@@ -61,8 +63,8 @@ class AttentionHead(nn.Module):
         self.v = nn.Linear(embedding_dim, value_dim)
         self.masking = masking
 
-    def forward(self, query: Tensor, key: Tensor, value: Tensor) -> Tensor:
-        return scaled_dot_product_attention(self.q(query), self.k(key), self.v(value), self.masking)
+    def forward(self, pad_mask: Tensor, query: Tensor, key: Tensor, value: Tensor) -> Tensor:
+        return scaled_dot_product_attention(pad_mask, self.q(query), self.k(key), self.v(value), self.masking)
 
 
 class MultiHeadAttention(nn.Module):
@@ -74,8 +76,8 @@ class MultiHeadAttention(nn.Module):
         )
         self.linear = nn.Linear(num_heads * value_dim, embedding_dim)
 
-    def forward(self, query: Tensor, key: Tensor, value: Tensor) -> Tensor:
-        concat_heads = torch.cat([head(query, key, value) for head in self.heads], dim=-1)
+    def forward(self, pad_mask: Tensor, query: Tensor, key: Tensor, value: Tensor) -> Tensor:
+        concat_heads = torch.cat([head(pad_mask, query, key, value) for head in self.heads], dim=-1)
         return self.linear(concat_heads)
 
 
@@ -127,8 +129,8 @@ class TransformerEncoderLayer(nn.Module):
             dropout=dropout,
         )
 
-    def forward(self, x: Tensor) -> Tensor:
-        x = self.self_attention(x, x, x)
+    def forward(self, x: Tensor, pad_mask: Tensor) -> Tensor:
+        x = self.self_attention(pad_mask, x, x, x)
         x = self.feed_forward(x)
         return x
 
@@ -148,12 +150,12 @@ class TransformerEncoder(nn.Module):
             [TransformerEncoderLayer(embedding_dim, num_heads, hidden_dim, dropout) for _ in range(num_layers)]
         )
 
-    def forward(self, x: Tensor) -> Tensor:
+    def forward(self, x: Tensor, pad_mask: Tensor) -> Tensor:
         seq_len = x.size(1)
         embedding_dim = x.size(2)
         x += positional_encoding(seq_len, embedding_dim)
         for layer in self.layers:
-            x = layer(x)
+            x = layer(x, pad_mask)
         return x
 
 
@@ -184,9 +186,9 @@ class TransformerDecoderLayer(nn.Module):
             dropout=dropout,
         )
 
-    def forward(self, x: Tensor, context: Tensor) -> Tensor:
-        x = self.masked_attention(x, x, x)
-        x = self.self_attention(context, context, x)
+    def forward(self, x: Tensor, context: Tensor, dec_pad_mask: Tensor, enc_pad_mask: Tensor) -> Tensor:
+        x = self.masked_attention(dec_pad_mask, x, x, x)
+        x = self.self_attention(enc_pad_mask, context, context, x)
         x = self.feed_forward(x)
         return x
 
@@ -206,11 +208,11 @@ class TransformerDecoder(nn.Module):
             [TransformerDecoderLayer(embedding_dim, num_heads, hidden_dim, dropout) for _ in range(num_layers)]
         )
 
-    def forward(self, x: Tensor, context: Tensor) -> Tensor:
+    def forward(self, x: Tensor, context: Tensor, dec_pad_mask: Tensor, enc_pad_mask: Tensor) -> Tensor:
         seq_len, embedding_dim = x.size(1), x.size(2)
         x += positional_encoding(seq_len, embedding_dim)
         for layer in self.layers:
-            x = layer(x, context)
+            x = layer(x, context, enc_pad_mask, dec_pad_mask)
         return x
 
 
@@ -235,11 +237,14 @@ class Transformer(nn.Module):
         )
 
     def forward(self, source: Tensor, target: Tensor) -> Tensor:
-        # source 임베딩 --> encoder 입력
-        # target 임베딩, source 임베딩 --> decoder 입력
-        # decoder 출력을 one-hot 변환 --> softmax
-        source = ""
-        target = ""
+        source_pad_mask = source == 0
+        target_pad_mask = target == 0
+        source = self.embedding(source)
+        source = self.encoder(source, source_pad_mask)
+        target = self.embedding(target)
+        target = self.decoder(target, source, target_pad_mask, source_pad_mask)
+        target = torch.matmul(target, self.embedding.weight.transpose(0, 1))
+        target = torch.softmax(target, dim=-1)
         return target
 
 
@@ -250,9 +255,10 @@ tfm_config = TransformerConfig()
 batch_size = 64
 
 # test run
-src = torch.randint(0, tfm_config.vocab_size, [batch_size, tfm_config.seq_len])
-tgt = torch.randint(0, tfm_config.vocab_size, [batch_size, tfm_config.seq_len])
-out = Transformer(tfm_config)(src, tgt)
+pad = torch.zeros([batch_size, 2]).long()
+src = torch.randint(0, tfm_config.vocab_size, [batch_size, tfm_config.seq_len - 2])
+tgt = torch.randint(0, tfm_config.vocab_size, [batch_size, tfm_config.seq_len - 2])
+out = Transformer(tfm_config)(torch.cat([src, pad], dim=1), torch.cat([tgt, pad], dim=1))
 print("source:", src.shape)
 print("target:", tgt.shape)
 print("output:", out.shape)
