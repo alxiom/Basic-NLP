@@ -104,7 +104,8 @@ class Residual(nn.Module):
         self.dropout = nn.Dropout(dropout)
 
     def forward(self, *x: Tensor) -> Tensor:
-        return self.norm(x[-1] + self.dropout(self.sublayer(*x)))
+        skip = 0 if len(x) == 1 else 1
+        return self.norm(x[skip] + self.dropout(self.sublayer(*x)))
 
 
 class TransformerEncoderLayer(nn.Module):
@@ -188,7 +189,7 @@ class TransformerDecoderLayer(nn.Module):
 
     def forward(self, x: Tensor, context: Tensor, dec_pad_mask: Tensor, enc_pad_mask: Tensor) -> Tensor:
         x = self.masked_attention(dec_pad_mask, x, x, x)
-        x = self.self_attention(enc_pad_mask, context, context, x)
+        x = self.self_attention(enc_pad_mask, x, context, context)
         x = self.feed_forward(x)
         return x
 
