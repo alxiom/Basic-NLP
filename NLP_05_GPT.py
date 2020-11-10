@@ -157,25 +157,6 @@ class GPT(nn.Module):
         super(GPT, self).__init__()
 
 
-# model config
-model_config = GPTConfig()
-
-# init model
-gpt_model = GPT(model_config)
-
-# train config
-train_config = TrainConfig(batch_size=64)
-
-# test run
-src = torch.randint(0, model_config.vocab_size, [train_config.batch_size, model_config.seq_len])
-tgt = torch.randint(0, model_config.vocab_size, [train_config.batch_size, model_config.seq_len])
-out, ce_loss = gpt_model(src, tgt)
-print("source:", src.shape)
-print("target:", tgt.shape)
-print("output:", out.shape)
-print("loss:", ce_loss.item())
-
-
 # addition demo
 class AdditionDataset(Dataset):
 
@@ -210,6 +191,35 @@ class AdditionDataset(Dataset):
         return self.split_problems.size
 
 
+class Trainer:
+
+    def __init__(self, model, train_data, valid_data, config):
+        super(Trainer, self).__init__()
+        self.model = model
+        self.train_data = train_data
+        self.valid_data = valid_data
+        self.n_digit = train_data.n_digit
+        self.seq_len = train_data.seq_len
+        self.config = config
+        self.device = "cpu"
+        self.global_step = 0
+        self.start_epoch = 1
+        self.epochs = config.epochs
+        self.optimizer = optim.Adam(self.model.parameters(), lr=config.learning_rate)
+
+    def run(self):
+        None
+
+    def run_epoch(self, data_loader, mode):
+        return 0.0
+
+    def save_checkpoint(self):
+        if self.config.checkpoint_path is not None:
+            print("save checkpoint...")
+            torch.save(self.model.state_dict(), f"{self.config.checkpoint_path}/gpt.pt")
+
+
+# prepare dataset
 sample_digit = 2
 train_dataset = AdditionDataset(n_digit=sample_digit, split="train")
 valid_dataset = AdditionDataset(n_digit=sample_digit, split="valid")
@@ -238,35 +248,6 @@ train_config = TrainConfig(
     num_workers=4,
     checkpoint_path="checkpoint",
 )
-
-
-class Trainer:
-
-    def __init__(self, model, train_data, valid_data, config):
-        super(Trainer, self).__init__()
-        self.model = model
-        self.train_data = train_data
-        self.valid_data = valid_data
-        self.n_digit = train_data.n_digit
-        self.seq_len = train_data.seq_len
-        self.config = config
-        self.device = "cpu"
-        self.global_step = 0
-        self.start_epoch = 1
-        self.epochs = config.epochs
-        self.optimizer = optim.Adam(self.model.parameters(), lr=config.learning_rate)
-
-    def run(self):
-        None
-
-    def run_epoch(self, data_loader, mode):
-        return 0.0
-
-    def save_checkpoint(self):
-        if self.config.checkpoint_path is not None:
-            print("save checkpoint...")
-            torch.save(self.model.state_dict(), f"{self.config.checkpoint_path}/gpt.pt")
-
 
 if train_gpt:
     Trainer(

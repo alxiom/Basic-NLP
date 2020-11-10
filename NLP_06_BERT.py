@@ -19,9 +19,9 @@ random.seed(42)
 np.random.seed(42)
 torch.manual_seed(42)
 
-dump_text = True
-train_tokenizer = True
-train_bert = True
+dump_text = False
+train_tokenizer = False
+train_bert = False
 
 
 @dataclass
@@ -29,9 +29,8 @@ class BertConfig:
     seq_len: int = 16
     vocab_size: int = 8000
     num_encoder_layers: int = 6
-    num_decoder_layers: int = 6
-    embedding_dim: int = 32
-    num_heads: int = 6
+    embedding_dim: int = 512
+    num_heads: int = 8
     hidden_dim: int = 2048
     dropout: float = 0.1
 
@@ -90,55 +89,13 @@ class BertDataset(Dataset):
         return self.corpus_size
 
     def __getitem__(self, item):
-        q, a, is_next_label = self.nsp_data(item)
-        q_random, q_label = self.mlm_data(q)
-        a_random, a_label = self.mlm_data(a)
-
-        q = [special.index("<cls>")] + q_random + [special.index("<sep>")]
-        a = a_random + [special.index("<eos>")]
-
-        q_label = [special.index("<pad>")] + q_label + [special.index("<pad>")]
-        a_label = a_label + [special.index("<pad>")]
-
-        bert_input = (q + a)[:self.seq_len]
-        bert_label = (q_label + a_label)[:self.seq_len]
-        segment_label = ([1 for _ in range(len(q))] + [2 for _ in range(len(a))])[:self.seq_len]
-
-        padding = [special.index("<pad>") for _ in range(self.seq_len - len(bert_input))]
-        bert_input.extend(padding), bert_label.extend(padding), segment_label.extend(padding)
-
-        output = {
-            "bert_input": bert_input,
-            "bert_label": bert_label,
-            "segment_label": segment_label,
-            "is_next": is_next_label,
-        }
-        return {key: torch.tensor(value) for key, value in output.items()}
+        return {}
 
     def mlm_data(self, text):
-        tokens = self.tokenizer.encode(text).ids
-        labels = []
-        for i in range(len(tokens)):
-            masking_prob = random.random()
-            if masking_prob < 0.15:  # 전체의 15% masking
-                labels.append(tokens[i])
-                mask_type_prob = random.random()
-                if mask_type_prob < 0.8:  # 마스킹 대상 중 80% 마스킹
-                    tokens[i] = special.index("<mask>")
-                elif mask_type_prob < 0.9:  # 마스킹 대상 중 10% random replace
-                    tokens[i] = random.randrange(self.tokenizer.get_vocab_size())
-            else:
-                labels.append(0)
-        return tokens, labels
+        return "", ""
 
     def nsp_data(self, item):
-        q, a = self.get_corpus_line(item)
-
-        # query, answer, label(isNext: 1, isNotNext: 0)
-        if random.random() > 0.5:
-            return q, a, 1
-        else:
-            return q, self.get_random_answer_line(), 0
+        return "", "", 0
 
     def get_corpus_line(self, item):
         return self.corpus[item][0], self.corpus[item][1]
@@ -224,7 +181,8 @@ class Residual(nn.Module):
         self.dropout = nn.Dropout(dropout)
 
     def forward(self, *x: Tensor) -> Tensor:
-        return self.norm(x[-1] + self.dropout(self.sublayer(*x)))
+        skip = 0 if len(x) == 1 else 1
+        return self.norm(x[skip] + self.dropout(self.sublayer(*x)))
 
 
 class TransformerEncoderLayer(nn.Module):
@@ -283,74 +241,24 @@ class Bert(nn.Module):
 
     def __init__(self, config):
         super(Bert, self).__init__()
-        self.embedding_dim = config.embedding_dim
-        self.vocab_size = config.vocab_size
-        self.token_embedding = nn.Embedding(config.vocab_size, config.embedding_dim, padding_idx=0)
-        self.segment_embedding = nn.Embedding(3, config.embedding_dim, padding_idx=0)
-        self.encoder = TransformerEncoder(
-            num_layers=config.num_encoder_layers,
-            embedding_dim=config.embedding_dim,
-            num_heads=config.num_heads,
-            hidden_dim=config.hidden_dim,
-            dropout=config.dropout,
-        )
-
-    def forward(self, x: Tensor, segment_label: Tensor):
-        pad_mask = x == 0
-        x_token_embedding = self.token_embedding(x)
-        seq_len = x_token_embedding.size(1)
-        embedding_dim = x_token_embedding.size(2)
-        x_segment_embedding = self.segment_embedding(segment_label)
-        x = x_token_embedding + x_segment_embedding + positional_encoding(seq_len, embedding_dim)
-        x = self.encoder(x, pad_mask)
-        return x
 
 
 class MaskedLanguageModel(nn.Module):
 
     def __init__(self, embedding_dim: int, vocab_size: int):
         super(MaskedLanguageModel, self).__init__()
-        self.linear = nn.Linear(embedding_dim, vocab_size)
-
-    def forward(self, x):
-        return self.linear(x)
 
 
 class NextSentencePrediction(nn.Module):
 
     def __init__(self, embedding_dim: int):
         super(NextSentencePrediction, self).__init__()
-        self.linear = nn.Linear(embedding_dim, 2)
-
-    def forward(self, x):
-        return self.linear(x[:, 0])
 
 
 class BertLanguageModel(nn.Module):
 
     def __init__(self, bert_model: Bert):
         super(BertLanguageModel, self).__init__()
-        self.bert_model = bert_model
-        self.mlm = MaskedLanguageModel(self.bert_model.embedding_dim, self.bert_model.vocab_size)
-        self.nsp = NextSentencePrediction(self.bert_model.embedding_dim)
-
-    def forward(self, x, segment_label):
-        x = self.bert_model(x, segment_label)
-        return self.mlm(x), self.nsp(x)
-
-
-train_dataset = BertDataset(chat_corpus, chat_tokenizer, BertConfig.seq_len)
-
-bert = Bert(BertConfig)
-bert_lm = BertLanguageModel(bert)
-
-train_config = TrainConfig(
-    epochs=10,
-    batch_size=128,
-    learning_rate=1e-4,
-    num_workers=4,
-    checkpoint_path="checkpoint",
-)
 
 
 class Trainer:
@@ -376,41 +284,10 @@ class Trainer:
         self.epochs = config.epochs
 
     def run(self):
-        for epoch in range(self.start_epoch, self.epochs + 1):
-            train_data_loader = DataLoader(
-                self.train_data,
-                batch_size=self.config.batch_size,
-                shuffle=True,
-                num_workers=self.config.num_workers,
-            )
-
-            print(f"run {epoch} epoch...")
-            self.model.train()
-            mlm_loss, nsp_loss = self.run_epoch(train_data_loader)
-            total_loss = mlm_loss + nsp_loss
-            print(f"Epoch: {epoch:2d} / MLM: {mlm_loss:.4f} / NSP: {nsp_loss:.4f} / total loss: {total_loss:.4f}")
-
-        self.save_checkpoint()
+        None
 
     def run_epoch(self, data_loader):
-        epoch_mlm_loss = 0.0
-        epoch_nsp_loss = 0.0
-        epoch_count = 0
-
-        for data in data_loader:
-            batch_size = len(data)
-            mlm_output, nsp_output = self.model(data["bert_input"], data["segment_label"])
-            mlm_loss = self.criterion(mlm_output.transpose(1, 2), data["bert_label"])
-            nsp_loss = self.criterion(nsp_output, data["is_next"])
-            loss = mlm_loss + nsp_loss
-            self.optimizer_schedule.zero_grad()
-            loss.backward()
-            self.optimizer_schedule.step_and_update_lr()
-
-            epoch_mlm_loss = (epoch_mlm_loss * epoch_count + mlm_loss.item() * batch_size) / (epoch_count + batch_size)
-            epoch_nsp_loss = (epoch_nsp_loss * epoch_count + nsp_loss.item() * batch_size) / (epoch_count + batch_size)
-            epoch_count += batch_size
-        return epoch_mlm_loss, epoch_nsp_loss
+        return 0.0
 
     def save_checkpoint(self):
         if self.config.checkpoint_path is not None:
@@ -437,15 +314,45 @@ class ScheduleOptimizer:
     def get_lr_scale(self):
         return np.min([
             np.power(self.current_steps, -0.5),
-            np.power(self.warmup_steps, -1.5) * self.current_steps])
+            np.power(self.warmup_steps, -1.5) * self.current_steps,
+        ])
 
     def update_learning_rate(self):
         self.current_steps += 1
         lr = self.init_lr * self.get_lr_scale()
-
         for param_group in self.optimizer.param_groups:
             param_group['lr'] = lr
 
+
+# prepare dataset
+sequence_length = 16
+train_dataset = BertDataset(chat_corpus, chat_tokenizer, sequence_length)
+
+# train data sample
+print(train_dataset[0])
+
+# model config
+model_config = BertConfig(
+    seq_len=sequence_length,
+    vocab_size=chat_tokenizer.get_vocab_size(),
+    num_encoder_layers=4,
+    embedding_dim=128,
+    num_heads=4,
+    hidden_dim=512,
+)
+
+# init model
+bert = Bert(model_config)
+bert_lm = BertLanguageModel(bert)
+
+# train config
+train_config = TrainConfig(
+    epochs=10,
+    batch_size=512,
+    learning_rate=1e-4,
+    num_workers=4,
+    checkpoint_path="checkpoint",
+)
 
 if train_bert:
     Trainer(
