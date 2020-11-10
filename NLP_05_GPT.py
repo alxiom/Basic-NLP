@@ -14,7 +14,7 @@ random.seed(42)
 np.random.seed(42)
 torch.manual_seed(42)
 
-train_gpt = True
+train_gpt = False
 
 
 @dataclass
@@ -155,39 +155,6 @@ class GPT(nn.Module):
 
     def __init__(self, config):
         super(GPT, self).__init__()
-        self.seq_len = config.seq_len
-        self.embedding = nn.Embedding(config.vocab_size, config.embedding_dim)
-        self.position_embedding = nn.Parameter(torch.zeros(1, config.seq_len, config.embedding_dim), requires_grad=True)
-        self.embedding_dropout = nn.Dropout(config.embedding_drop_prob)
-        self.decoder = TransformerDecoder(config)
-        self.linear = nn.Linear(config.embedding_dim, config.vocab_size, bias=False)
-        self.apply(self.init_weights)
-
-    @staticmethod
-    def init_weights(module):
-        if isinstance(module, (nn.Linear, nn.Embedding)):
-            module.weight.data.normal_(mean=0.0, std=0.02)
-            if isinstance(module, nn.Linear) and module.bias is not None:
-                module.bias.data.zero_()
-        elif isinstance(module, nn.LayerNorm):
-            module.bias.data.zero_()
-            module.weight.data.fill_(1.0)
-
-    def forward(self, x: Tensor, y: Tensor = None) -> (Tensor, Tensor):
-        # embedding + position embedding
-        # embedding dropout 적용
-        # transformer decoder 입력
-        # one-hot 벡터로 변환
-        # cross entropy loss 계산
-        x = self.embedding(x) + self.position_embedding[:, :x.size(1), :]
-        x = self.embedding_dropout(x)
-        x = self.decoder(x)
-        x = self.linear(x)
-
-        loss = None
-        if y is not None:
-            loss = ftn.cross_entropy(x.view(-1, x.size(-1)), y.view(-1), ignore_index=-1)
-        return x, loss
 
 
 # model config
@@ -290,56 +257,10 @@ class Trainer:
         self.optimizer = optim.Adam(self.model.parameters(), lr=config.learning_rate)
 
     def run(self):
-
-        best_loss = float("inf")
-
-        print("load valid set...")
-        valid_data_loader = DataLoader(self.valid_data, batch_size=self.config.batch_size, shuffle=False)
-
-        print("run 0 epoch...")
-        self.model.eval()
-        with torch.no_grad():
-            valid_loss = self.run_epoch(valid_data_loader, "valid")
-            print(f"Epoch: 0 / valid loss: {valid_loss:.4f}")
-
-        for epoch in range(self.start_epoch, self.epochs + 1):
-            train_data_loader = DataLoader(
-                self.train_data,
-                batch_size=self.config.batch_size,
-                shuffle=True,
-                num_workers=self.config.num_workers,
-            )
-
-            print(f"run {epoch} epoch...")
-            self.model.train()
-            train_loss = self.run_epoch(train_data_loader, "train")
-            print(f"Epoch: {epoch:2d} / train loss: {train_loss:.4f}")
-
-            self.model.eval()
-            with torch.no_grad():
-                valid_loss = self.run_epoch(valid_data_loader, "valid")
-                print(f"Epoch: {epoch:2d} / valid loss: {valid_loss:.4f}")
-
-            if valid_loss < best_loss:
-                best_loss = valid_loss
-                self.save_checkpoint()
+        None
 
     def run_epoch(self, data_loader, mode):
-        epoch_loss = 0.0
-        epoch_count = 0
-
-        for x, y in data_loader:
-            batch_size = y.size(0)
-            y_hat, batch_loss = self.model(x, y)
-
-            if mode == "train":
-                self.optimizer.zero_grad()
-                batch_loss.backward()
-                self.optimizer.step()
-
-            epoch_loss = (epoch_loss * epoch_count + batch_loss.item() * batch_size) / (epoch_count + batch_size)
-            epoch_count += batch_size
-        return epoch_loss
+        return 0.0
 
     def save_checkpoint(self):
         if self.config.checkpoint_path is not None:
