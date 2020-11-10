@@ -392,6 +392,6 @@ def test_model(model, dataset, batch_size):
 
 print("test on train set (inner test)")
 test_model(gpt_model, train_dataset, batch_size=1024)
-
+print("--------------------------------------------")
 print("test on valid set")
 test_model(gpt_model, valid_dataset, batch_size=1024)
