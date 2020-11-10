@@ -1,3 +1,4 @@
+import os
 import random
 from dataclasses import dataclass
 
@@ -10,23 +11,48 @@ from torch import optim
 from torch.nn import functional as ftn
 from torch.utils.data import Dataset, DataLoader
 from tokenizers import CharBPETokenizer
-from tqdm import tqdm
 
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 # Created by Alex Kim
 random.seed(42)
 np.random.seed(42)
 torch.manual_seed(42)
 
+dump_text = True
+train_tokenizer = True
+train_bert = True
+
+
+@dataclass
+class BertConfig:
+    seq_len: int = 16
+    vocab_size: int = 8000
+    num_encoder_layers: int = 6
+    num_decoder_layers: int = 6
+    embedding_dim: int = 32
+    num_heads: int = 6
+    hidden_dim: int = 2048
+    dropout: float = 0.1
+
+
+@dataclass
+class TrainConfig:
+    epochs: int = 10
+    batch_size: int = 64
+    learning_rate: float = 1e-4
+    weight_decay: float = 0.01
+    warmup_steps: int = 10000
+    checkpoint_path: str = None
+    num_workers: int = 0  # for DataLoader
+
+
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 special = ["<pad>", "<unk>", "<bos>", "<eos>", "<sep>", "<cls>", "<mask>"]
 
-dump_text = True
-train_tokenizer = False
-
-chat_corpus = pd.read_csv("data/chat.csv", header=0).to_numpy()
+chat_corpus = pd.read_csv("data/chat.csv", header=0).sample(1000).to_numpy()
 if dump_text:
-    with open("data/chat.txt", "w", encoding="utf-8") as f:
+    with open("data/chat_sample.txt", "w", encoding="utf-8") as f:
         for row_index in range(len(chat_corpus)):
             row = chat_corpus[row_index]
             chat_query = row[0]
@@ -36,7 +62,7 @@ if dump_text:
 # chat text --> vocab.json, merges.txt
 if train_tokenizer:
     chat_tokenizer = CharBPETokenizer()
-    chat_tokenizer.train(files=["data/chat.txt"], vocab_size=8000, special_tokens=special, min_frequency=3)
+    chat_tokenizer.train(files=["data/chat_sample.txt"], vocab_size=8000, special_tokens=special, min_frequency=3)
     chat_tokenizer.save_model(f"data")
 
 chat_tokenizer = CharBPETokenizer(vocab="data/vocab.json", merges="data/merges.txt")
@@ -119,22 +145,6 @@ class BertDataset(Dataset):
 
     def get_random_answer_line(self):
         return self.corpus[random.randrange(self.corpus_size)][1]
-
-
-bert_dataset = BertDataset(chat_corpus, chat_tokenizer, 30)
-print(bert_dataset[1])
-
-
-@dataclass
-class BertConfig:
-    seq_len: int = 16
-    vocab_size: int = 8000
-    num_encoder_layers: int = 6
-    num_decoder_layers: int = 6
-    embedding_dim: int = 32
-    num_heads: int = 6
-    hidden_dim: int = 2048
-    dropout: float = 0.1
 
 
 def positional_encoding(seq_len: int, embedding_dim: int) -> Tensor:
@@ -273,7 +283,8 @@ class Bert(nn.Module):
 
     def __init__(self, config):
         super(Bert, self).__init__()
-
+        self.embedding_dim = config.embedding_dim
+        self.vocab_size = config.vocab_size
         self.token_embedding = nn.Embedding(config.vocab_size, config.embedding_dim, padding_idx=0)
         self.segment_embedding = nn.Embedding(3, config.embedding_dim, padding_idx=0)
         self.encoder = TransformerEncoder(
@@ -292,9 +303,153 @@ class Bert(nn.Module):
         x_segment_embedding = self.segment_embedding(segment_label)
         x = x_token_embedding + x_segment_embedding + positional_encoding(seq_len, embedding_dim)
         x = self.encoder(x, pad_mask)
-        return x[:, 0, :]
+        return x
 
+
+class MaskedLanguageModel(nn.Module):
+
+    def __init__(self, embedding_dim: int, vocab_size: int):
+        super(MaskedLanguageModel, self).__init__()
+        self.linear = nn.Linear(embedding_dim, vocab_size)
+
+    def forward(self, x):
+        return self.linear(x)
+
+
+class NextSentencePrediction(nn.Module):
+
+    def __init__(self, embedding_dim: int):
+        super(NextSentencePrediction, self).__init__()
+        self.linear = nn.Linear(embedding_dim, 2)
+
+    def forward(self, x):
+        return self.linear(x[:, 0])
+
+
+class BertLanguageModel(nn.Module):
+
+    def __init__(self, bert_model: Bert):
+        super(BertLanguageModel, self).__init__()
+        self.bert_model = bert_model
+        self.mlm = MaskedLanguageModel(self.bert_model.embedding_dim, self.bert_model.vocab_size)
+        self.nsp = NextSentencePrediction(self.bert_model.embedding_dim)
+
+    def forward(self, x, segment_label):
+        x = self.bert_model(x, segment_label)
+        return self.mlm(x), self.nsp(x)
+
+
+train_dataset = BertDataset(chat_corpus, chat_tokenizer, BertConfig.seq_len)
 
 bert = Bert(BertConfig)
-out = bert(bert_dataset[1]["bert_input"].unsqueeze(0), bert_dataset[1]["segment_label"].unsqueeze(0))
-print(out)
+bert_lm = BertLanguageModel(bert)
+
+train_config = TrainConfig(
+    epochs=10,
+    batch_size=128,
+    learning_rate=1e-4,
+    num_workers=4,
+    checkpoint_path="checkpoint",
+)
+
+
+class Trainer:
+
+    def __init__(self, bert_model, train_data, config):
+        super(Trainer, self).__init__()
+        self.bert_model = bert_model
+        self.model = BertLanguageModel(self.bert_model)
+        self.train_data = train_data
+        self.config = config
+        self.optimizer = optim.Adam(
+            self.model.parameters(),
+            lr=config.learning_rate,
+            weight_decay=config.weight_decay,
+        )
+        self.optimizer_schedule = ScheduleOptimizer(
+            self.optimizer,
+            self.bert_model.embedding_dim,
+            warmup_steps=config.warmup_steps,
+        )
+        self.criterion = nn.CrossEntropyLoss(ignore_index=special.index("<pad>"))
+        self.start_epoch = 1
+        self.epochs = config.epochs
+
+    def run(self):
+        for epoch in range(self.start_epoch, self.epochs + 1):
+            train_data_loader = DataLoader(
+                self.train_data,
+                batch_size=self.config.batch_size,
+                shuffle=True,
+                num_workers=self.config.num_workers,
+            )
+
+            print(f"run {epoch} epoch...")
+            self.model.train()
+            mlm_loss, nsp_loss = self.run_epoch(train_data_loader)
+            total_loss = mlm_loss + nsp_loss
+            print(f"Epoch: {epoch:2d} / MLM: {mlm_loss:.4f} / NSP: {nsp_loss:.4f} / total loss: {total_loss:.4f}")
+
+        self.save_checkpoint()
+
+    def run_epoch(self, data_loader):
+        epoch_mlm_loss = 0.0
+        epoch_nsp_loss = 0.0
+        epoch_count = 0
+
+        for data in data_loader:
+            batch_size = len(data)
+            mlm_output, nsp_output = self.model(data["bert_input"], data["segment_label"])
+            mlm_loss = self.criterion(mlm_output.transpose(1, 2), data["bert_label"])
+            nsp_loss = self.criterion(nsp_output, data["is_next"])
+            loss = mlm_loss + nsp_loss
+            self.optimizer_schedule.zero_grad()
+            loss.backward()
+            self.optimizer_schedule.step_and_update_lr()
+
+            epoch_mlm_loss = (epoch_mlm_loss * epoch_count + mlm_loss.item() * batch_size) / (epoch_count + batch_size)
+            epoch_nsp_loss = (epoch_nsp_loss * epoch_count + nsp_loss.item() * batch_size) / (epoch_count + batch_size)
+            epoch_count += batch_size
+        return epoch_mlm_loss, epoch_nsp_loss
+
+    def save_checkpoint(self):
+        if self.config.checkpoint_path is not None:
+            print("save checkpoint...")
+            torch.save(self.model.state_dict(), f"{self.config.checkpoint_path}/bert.pt")
+
+
+class ScheduleOptimizer:
+
+    def __init__(self, optimizer, embedding_dim, warmup_steps):
+        super(ScheduleOptimizer, self).__init__()
+        self.optimizer = optimizer
+        self.warmup_steps = warmup_steps
+        self.current_steps = 0
+        self.init_lr = np.power(embedding_dim, -0.5)
+
+    def step_and_update_lr(self):
+        self.update_learning_rate()
+        self.optimizer.step()
+
+    def zero_grad(self):
+        self.optimizer.zero_grad()
+
+    def get_lr_scale(self):
+        return np.min([
+            np.power(self.current_steps, -0.5),
+            np.power(self.warmup_steps, -1.5) * self.current_steps])
+
+    def update_learning_rate(self):
+        self.current_steps += 1
+        lr = self.init_lr * self.get_lr_scale()
+
+        for param_group in self.optimizer.param_groups:
+            param_group['lr'] = lr
+
+
+if train_bert:
+    Trainer(
+        bert,
+        train_dataset,
+        train_config,
+    ).run()
