@@ -14,7 +14,7 @@ random.seed(42)
 np.random.seed(42)
 torch.manual_seed(42)
 
-train_gpt = False
+train_gpt = True
 
 
 @dataclass
@@ -276,6 +276,7 @@ train_config = TrainConfig(
 class Trainer:
 
     def __init__(self, model, train_data, valid_data, config):
+        super(Trainer, self).__init__()
         self.model = model
         self.train_data = train_data
         self.valid_data = valid_data
@@ -286,11 +287,11 @@ class Trainer:
         self.global_step = 0
         self.start_epoch = 1
         self.epochs = config.epochs
-        self.optimizer = optim.Adam(model.parameters(), lr=config.learning_rate)
+        self.optimizer = optim.Adam(self.model.parameters(), lr=config.learning_rate)
 
     def run(self):
 
-        early_stop = float("inf")
+        best_loss = float("inf")
 
         print("load valid set...")
         valid_data_loader = DataLoader(self.valid_data, batch_size=self.config.batch_size, shuffle=False)
@@ -319,8 +320,8 @@ class Trainer:
                 valid_loss = self.run_epoch(valid_data_loader, "valid")
                 print(f"Epoch: {epoch:2d} / valid loss: {valid_loss:.4f}")
 
-            if valid_loss < early_stop:
-                early_stop = valid_loss
+            if valid_loss < best_loss:
+                best_loss = valid_loss
                 self.save_checkpoint()
 
     def run_epoch(self, data_loader, mode):
