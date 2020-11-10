@@ -17,7 +17,7 @@ torch.manual_seed(42)
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 special = ["<pad>", "<unk>", "<bos>", "<eos>", "<sep>", "<cls>", "<mask>"]
 
-train_seq2seq_attention = False
+train_seq2seq_attention = True
 
 tokenizer = CharBPETokenizer(vocab="data/vocab.json", merges="data/merges.txt")
 
@@ -122,9 +122,9 @@ class Attention(nn.Module):
         # 이번 decoder 출력과 encoder 모든 출력과 dot product 실행 --> sequence of scala (=attention score)
         # attention score --> softmax --> attention weight
         # 위에서 구한 강도에 따라서 encoder 모든 출력을 weight sum --> context_vector
-        attention_score = ""
-        attention_weight = ""
-        context_vector = ""
+        attention_score = torch.bmm(decoder_output, encoder_output.transpose(1, 2))
+        attention_weight = self.softmax(attention_score)
+        context_vector = torch.bmm(attention_weight, encoder_output)
         return context_vector
 
 
@@ -154,11 +154,11 @@ class Seq2SeqAttention(nn.Module):
             # encoder output, decoder output 두 값을 이용하여 지금 decoding 할 context 생성
             # decoder output, context 이용하여 attention 적용된 output 도출
             # attention output 사용하여 greedy decoding
-            context = ""
-            attention_output = ""
-            attention_outputs[:, t, :] = ""
+            context = self.attention(encoder_output, decoder_output)
+            attention_output = self.linear(torch.cat([decoder_output, context], dim=2).squeeze(1))
+            attention_outputs[:, t, :] = attention_output
             teacher = target[:, t]
-            top1 = ""
+            top1 = attention_output.argmax(1)
             decoder_input = teacher if random.random() < teacher_forcing else top1
         return attention_outputs
 
