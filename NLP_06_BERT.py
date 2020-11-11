@@ -21,7 +21,7 @@ torch.manual_seed(42)
 
 dump_text = False
 train_tokenizer = False
-train_bert = False
+train_bert = True
 
 
 @dataclass
@@ -89,13 +89,55 @@ class BertDataset(Dataset):
         return self.corpus_size
 
     def __getitem__(self, item):
-        return {}
+        q, a, is_next_label = self.nsp_data(item)
+        q_random, q_label = self.mlm_data(q)
+        a_random, a_label = self.mlm_data(a)
+
+        q = [special.index("<cls>")] + q_random + [special.index("<sep>")]
+        a = a_random + [special.index("<eos>")]
+
+        q_label = [special.index("<pad>")] + q_label + [special.index("<pad>")]
+        a_label = a_label + [special.index("<pad>")]
+
+        bert_input = (q + a)[:self.seq_len]
+        bert_label = (q_label + a_label)[:self.seq_len]
+        segment_label = ([1 for _ in range(len(q))] + [2 for _ in range(len(a))])[:self.seq_len]
+
+        padding = [special.index("<pad>") for _ in range(self.seq_len - len(bert_input))]
+        bert_input.extend(padding), bert_label.extend(padding), segment_label.extend(padding)
+
+        output = {
+            "bert_input": bert_input,
+            "bert_label": bert_label,
+            "segment_label": segment_label,
+            "is_next": is_next_label,
+        }
+        return {key: torch.tensor(value) for key, value in output.items()}
 
     def mlm_data(self, text):
-        return "", ""
+        tokens = self.tokenizer.encode(text).ids
+        labels = []
+        for i in range(len(tokens)):
+            masking_prob = random.random()
+            if masking_prob < 0.15:  # 전체의 15% masking
+                labels.append(tokens[i])
+                mask_type_prob = random.random()
+                if mask_type_prob < 0.8:  # 마스킹 대상 중 80% 마스킹
+                    tokens[i] = special.index("<mask>")
+                elif mask_type_prob < 0.9:  # 마스킹 대상 중 10% random replace
+                    tokens[i] = random.randrange(self.tokenizer.get_vocab_size())
+            else:
+                labels.append(0)
+        return tokens, labels
 
     def nsp_data(self, item):
-        return "", "", 0
+        q, a = self.get_corpus_line(item)
+
+        # query, answer, label(isNext: 1, isNotNext: 0)
+        if random.random() > 0.5:
+            return q, a, 1
+        else:
+            return q, self.get_random_answer_line(), 0
 
     def get_corpus_line(self, item):
         return self.corpus[item][0], self.corpus[item][1]
@@ -241,24 +283,60 @@ class Bert(nn.Module):
 
     def __init__(self, config):
         super(Bert, self).__init__()
+        self.embedding_dim = config.embedding_dim
+        self.vocab_size = config.vocab_size
+        self.token_embedding = nn.Embedding(config.vocab_size, config.embedding_dim, padding_idx=0)
+        self.segment_embedding = nn.Embedding(3, config.embedding_dim, padding_idx=0)
+        self.encoder = TransformerEncoder(
+            num_layers=config.num_encoder_layers,
+            embedding_dim=config.embedding_dim,
+            num_heads=config.num_heads,
+            hidden_dim=config.hidden_dim,
+            dropout=config.dropout,
+        )
+
+    def forward(self, x: Tensor, segment_label: Tensor):
+        pad_mask = x == 0
+        x_token_embedding = self.token_embedding(x)
+        seq_len = x_token_embedding.size(1)
+        embedding_dim = x_token_embedding.size(2)
+        x_segment_embedding = self.segment_embedding(segment_label)
+        x = x_token_embedding + x_segment_embedding + positional_encoding(seq_len, embedding_dim)
+        x = self.encoder(x, pad_mask)
+        return x
 
 
 class MaskedLanguageModel(nn.Module):
 
     def __init__(self, embedding_dim: int, vocab_size: int):
         super(MaskedLanguageModel, self).__init__()
+        self.linear = nn.Linear(embedding_dim, vocab_size)
+
+    def forward(self, x):
+        return self.linear(x)
 
 
 class NextSentencePrediction(nn.Module):
 
     def __init__(self, embedding_dim: int):
         super(NextSentencePrediction, self).__init__()
+        self.linear = nn.Linear(embedding_dim, 2)
+
+    def forward(self, x):
+        return self.linear(x[:, 0])
 
 
 class BertLanguageModel(nn.Module):
 
     def __init__(self, bert_model: Bert):
         super(BertLanguageModel, self).__init__()
+        self.bert_model = bert_model
+        self.mlm = MaskedLanguageModel(self.bert_model.embedding_dim, self.bert_model.vocab_size)
+        self.nsp = NextSentencePrediction(self.bert_model.embedding_dim)
+
+    def forward(self, x, segment_label):
+        x = self.bert_model(x, segment_label)
+        return self.mlm(x), self.nsp(x)
 
 
 class Trainer:
@@ -284,10 +362,41 @@ class Trainer:
         self.epochs = config.epochs
 
     def run(self):
-        None
+        for epoch in range(self.start_epoch, self.epochs + 1):
+            train_data_loader = DataLoader(
+                self.train_data,
+                batch_size=self.config.batch_size,
+                shuffle=True,
+                num_workers=self.config.num_workers,
+            )
+
+            print(f"run {epoch} epoch...")
+            self.model.train()
+            mlm_loss, nsp_loss = self.run_epoch(train_data_loader)
+            total_loss = mlm_loss + nsp_loss
+            print(f"Epoch: {epoch:2d} / MLM: {mlm_loss:.4f} / NSP: {nsp_loss:.4f} / total loss: {total_loss:.4f}")
+
+        self.save_checkpoint()
 
     def run_epoch(self, data_loader):
-        return 0.0
+        epoch_mlm_loss = 0.0
+        epoch_nsp_loss = 0.0
+        epoch_count = 0
+
+        for data in data_loader:
+            batch_size = len(data)
+            mlm_output, nsp_output = self.model(data["bert_input"], data["segment_label"])
+            mlm_loss = self.criterion(mlm_output.transpose(1, 2), data["bert_label"])
+            nsp_loss = self.criterion(nsp_output, data["is_next"])
+            loss = mlm_loss + nsp_loss
+            self.optimizer_schedule.zero_grad()
+            loss.backward()
+            self.optimizer_schedule.step_and_update_lr()
+
+            epoch_mlm_loss = (epoch_mlm_loss * epoch_count + mlm_loss.item() * batch_size) / (epoch_count + batch_size)
+            epoch_nsp_loss = (epoch_nsp_loss * epoch_count + nsp_loss.item() * batch_size) / (epoch_count + batch_size)
+            epoch_count += batch_size
+        return epoch_mlm_loss, epoch_nsp_loss
 
     def save_checkpoint(self):
         if self.config.checkpoint_path is not None:
