@@ -19,10 +19,10 @@ torch.manual_seed(42)
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 special = ["<pad>", "<unk>", "<bos>", "<eos>", "<sep>", "<cls>", "<mask>"]
 
-sample_chat = False
-train_tokenizer = False
-show_analysis = False
-train_seq2seq = False
+sample_chat = True
+train_tokenizer = True
+show_analysis = True
+train_seq2seq = True
 
 if sample_chat:
     samples = 128

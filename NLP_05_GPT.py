@@ -14,7 +14,7 @@ random.seed(42)
 np.random.seed(42)
 torch.manual_seed(42)
 
-train_gpt = False
+train_gpt = True
 
 
 @dataclass
@@ -352,7 +352,7 @@ def generate(model, x, step):
     return x
 
 
-def test_model(model, dataset, batch_size):
+def model_test(model, dataset, batch_size):
     results = []
     n_digit = dataset.n_digit
     for x, _ in DataLoader(dataset, batch_size=batch_size):
@@ -373,7 +373,7 @@ def test_model(model, dataset, batch_size):
 
 
 print("test on train set (inner test)")
-test_model(gpt_model, train_dataset, batch_size=1024)
+model_test(gpt_model, train_dataset, batch_size=1024)
 print("--------------------------------------------")
 print("test on valid set")
-test_model(gpt_model, valid_dataset, batch_size=1024)
+model_test(gpt_model, valid_dataset, batch_size=1024)

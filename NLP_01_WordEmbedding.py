@@ -98,7 +98,7 @@ def draw_figure(xy, word_dict, title):
 
     p.circle([x for x, y in xy], [y for x, y in xy], fill_color="white", line_color="black", line_width=1, size=12)
     p.text([x for x, y in xy], [y for x, y in xy], [word_dict[j] for j in range(len(xy))])
-    show(p, browser="firefox")
+    show(p)
 
 
 embedding_dim = 2
