@@ -1,4 +1,4 @@
-# multicampus-NLP
+# Basic-NLP
 + 딥러닝 자연어 처리 - 워드임베딩 부터 최신 기술까지
 
 ## requirements
