@@ -1,6 +1,5 @@
-import torch
 from transformers import BertTokenizer, BertModel
-from transformers import GPT2Tokenizer, GPT2LMHeadModel
+from transformers import pipeline, set_seed
 
 kc_bert_sample_text = "배가 바다를 향해 떠난다"
 
@@ -15,16 +14,10 @@ print(kc_bert_outputs.shape)  # batch * seq_len * hidden_dim
 
 gpt2_sample_text = "The Manhattan bridge"
 
-gpt2_tokenizer = GPT2Tokenizer.from_pretrained("gpt2")
-gpt2_model = GPT2LMHeadModel.from_pretrained("gpt2")
-generate = gpt2_tokenizer.encode(gpt2_sample_text)
-context = torch.tensor([generate])
-past = None
-for _ in range(25):
-    output, past = gpt2_model(context, past_key_values=past)
-    token = torch.argmax(output[..., -1, :])
-    generate += [token.tolist()]
-    context = token.unsqueeze(0)
+generator = pipeline("text-generation", model="gpt2")
+set_seed(42)
+results = generator(gpt2_sample_text, max_length=30, num_return_sequences=5)
 
-decode_generate = gpt2_tokenizer.decode(generate)
-print(decode_generate)
+for result in results:
+    print(result["generated_text"])
+    print("--")
