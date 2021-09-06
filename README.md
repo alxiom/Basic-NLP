@@ -9,12 +9,12 @@
 ```bash
 cd
 sudo apt install -y git
-git clone https://github.com/hyoungseok/multicampus-NLP.git
+git clone https://github.com/alxiom/Basic-NLP.git
 cd multicampus-NLP
 ./setup-ubuntu.sh
 mkdir data
 wget https://raw.githubusercontent.com/e9t/nsmc/master/ratings.txt -O data/ratings.txt
-wget https://raw.githubusercontent.com/songys/Chatbot_data/master/ChatbotData%20.csv -O data/chat.csv
+wget https://raw.githubusercontent.com/songys/Chatbot_data/master/ChatbotData.csv -O data/chat.csv
 ```
 + (optional) [koWiki](https://drive.google.com/file/d/1viFZcVWba5jtVBm3PcbHlBBCKRldV6tn/view?usp=sharing) 텍스트
 
