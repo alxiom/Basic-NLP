@@ -452,7 +452,6 @@ model_config = BertConfig(
 
 # init model
 bert = Bert(model_config)
-bert_lm = BertLanguageModel(bert)
 
 # train config
 train_config = TrainConfig(
